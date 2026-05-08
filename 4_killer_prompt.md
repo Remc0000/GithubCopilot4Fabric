@@ -102,9 +102,7 @@ Analyse **sales orders by Product Category × City × State** with
 When done, print:
 1. An **ASCII finish flag** 🏁
 2. The **GitHub Copilot banner** in ASCII
-3. The **total elapsed time** (target: beat the previous `1h 14m`,
-   because last time you discovered the PBIR format the hard way and
-   we'd all like our lunch break back)
+3. The **total elapsed time** (target: **Max** `30min` otherwise people are already gone)
 4. Links to: the GitHub repo, the workspace, the published report
 
 ### 🙏 One last thing
