@@ -48,8 +48,8 @@ Analyse **sales orders by Product Category × City × State** with
 | Agent | Role | Tools |
 |---|---|---|
 | 👷 **Bob** | Tech lead, orchestrates the build | skills-for-fabric, fab CLI |
-| 🚜 **Muck** | Bulldozes data into the warehouse | T-SQL, sqldw-authoring-cli |
-| 🏗️ **Scoop** | Scoops up the semantic model in TMDL | powerbi-authoring-cli |
+| 🚜 **Muck** | Bulldozes data through bronze/silver/gold | PySpark notebooks, skills-for-fabric |
+| 🏗️ **Scoop** | Scoops up the semantic model in TMDL | RuiRomano `powerbi` plugin |
 | 🚧 **Roley** | Rolls out the Power BI report (PBIR) | RuiRomano `powerbi` plugin |
 | 🏎️ **Lofty** | Lifts heavy specs, writes OpenSpec | openspec |
 | 🚒 **Dizzy** | Mixes everything in CI / GitHub | gh CLI |
@@ -171,14 +171,14 @@ what works. Audience > perfection.
      Get this wrong and 11 visuals scream "Can't display". Don't ask
      how I know.
 5. **Scoop** — deploy via REST `POST /v1/workspaces/{ws}/items` (NOT
-   `fab import` — see lesson 14.1). Use the **SQL endpoint GUID**, not
-   the lakehouse GUID, in `Sql.Database()` — wrong one fails framing.
-   Trigger a Direct Lake **framing refresh** (`POST .../refreshes
-   {"type":"Full"}`) before any DAX. Validate via REST `executeQueries`
-   (NOT the MCP tool — see lesson 10): total ≈ **$708,690**, **32
-   orders**. (Outlier count target depends on the choice Muck made in
-   step 3; just confirm the measure returns a number, don't insist on
-   `64`.)
+   `fab import` — it crashes inside this CLI session). Use the **SQL
+   endpoint GUID**, not the lakehouse GUID, in `Sql.Database()` — wrong
+   one fails framing. Trigger a Direct Lake **framing refresh** (`POST
+   .../refreshes {"type":"Full"}`) before any DAX. Validate via REST
+   `executeQueries` (NOT the PowerBIQuery MCP tool — it caches stale
+   model lists): total ≈ **$708,690**, **32 orders**. (Outlier count
+   target depends on the choice Muck made in step 3; just confirm the
+   measure returns a number, don't insist on `64`.)
 6. **Roley** — author the **PBIR enhanced format** using the RuiRomano
    `powerbi@powerbi-agentic-plugins` plugin. Its templates target the
    schemas Fabric service expects:

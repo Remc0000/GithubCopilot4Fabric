@@ -7,7 +7,8 @@ This guide installs:
 1. **Python 3.13** (side-by-side with newer Python versions)
 2. **Fabric CLI** (`fab`)
 3. **fabric-cicd** (Python package for Fabric CI/CD)
-4. **skills-for-fabric** (Copilot CLI plugin with Fabric skills)
+4. **skills-for-fabric** (Microsoft Copilot CLI plugin with Fabric skills)
+5. **powerbi-agentic-plugins** (RuiRomano Copilot CLI plugins for TMDL / PBIR / DAX)
 
 > **TL;DR — "install 2_Fab_Init.md"**
 > Run the [Quick Install Script](#quick-install-script) at the bottom of this file. It is idempotent — re-running it only installs what's missing or out of date.
@@ -91,7 +92,9 @@ py -3.13 your_deploy_script.py
 
 Adds Microsoft Fabric skills to Copilot CLI: SQL Warehouse, Spark/Lakehouse, Power BI, Eventhouse/KQL, Eventstream, Dataflows Gen2, search, migrations, and end-to-end medallion architecture.
 
-**Repo:** <https://github.com/microsoft/skills-for-fabric>### First-time install (inside Copilot CLI)
+**Repo:** <https://github.com/microsoft/skills-for-fabric>
+
+### First-time install (inside Copilot CLI)
 
 ```text
 /plugin marketplace add microsoft/skills-for-fabric
@@ -184,7 +187,7 @@ Save this block as `install-fabric.ps1` (or paste straight into PowerShell). It 
 Write-Host "=== Microsoft Fabric — Copilot CLI setup ===" -ForegroundColor Cyan
 
 # 1. Python 3.13 ---------------------------------------------------------------
-Write-Host "`n[1/4] Python 3.13" -ForegroundColor Yellow
+Write-Host "`n[1/5] Python 3.13" -ForegroundColor Yellow
 $py313 = & py -3.13 --version 2>$null
 if (-not $py313) {
     Write-Host "Installing Python 3.13 via py launcher..."
@@ -194,7 +197,7 @@ if (-not $py313) {
 }
 
 # 2. Fabric CLI ----------------------------------------------------------------
-Write-Host "`n[2/4] Fabric CLI (fab)" -ForegroundColor Yellow
+Write-Host "`n[2/5] Fabric CLI (fab)" -ForegroundColor Yellow
 $fabVer = & fab --version 2>$null | Select-String "fab version" | Select-Object -First 1
 if (-not $fabVer) {
     Write-Host "Installing ms-fabric-cli..."
@@ -206,12 +209,12 @@ if (-not $fabVer) {
 }
 
 # 3. fabric-cicd (Python 3.13) -------------------------------------------------
-Write-Host "`n[3/4] fabric-cicd (Python 3.13)" -ForegroundColor Yellow
+Write-Host "`n[3/5] fabric-cicd (Python 3.13)" -ForegroundColor Yellow
 py -3.13 -m pip install --upgrade fabric-cicd --quiet
 py -3.13 -m pip show fabric-cicd | Select-String "Version"
 
 # 4. skills-for-fabric ---------------------------------------------------------
-Write-Host "`n[4/4] skills-for-fabric Copilot plugin" -ForegroundColor Yellow
+Write-Host "`n[4/5] skills-for-fabric Copilot plugin" -ForegroundColor Yellow
 $pluginDir = "$env:USERPROFILE\.copilot\installed-plugins\fabric-collection\skills-for-fabric"
 if (Test-Path $pluginDir) {
     Push-Location $pluginDir
