@@ -57,9 +57,7 @@ Analyse **sales orders by Product Category × City × State** with
 2. **Bob** — `fab` create workspace **`Fabric Roadshow`**, assign to
    `Trial-Remco`. Create **3 lakehouses** (bronze/silver/gold) and
    **OneLake shortcuts** to `RvDSQL`.
-3. **Muck** — Use PySpark notebooks using your skills for fabric and end up with a star schema
-   (fact_sales_order, dim_product_category, dim_geography, dim_state,
-   dim_date).
+3. **Muck** — Use your data engineering skills to create notebooks for bronze, silver and gold. Make sure you also use markdown to make your code explaineble.
 4. **Scoop** — author **TMDL** for a **Direct Lake** semantic model
    `OrdersAnalytics`. Rules of the house:
    - **TABS, not spaces.** Verify 0x09. I'll know.
