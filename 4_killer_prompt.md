@@ -7,7 +7,7 @@
 
 ## --- BEGIN ---
 
-Hi GHCP! 👋 We're live at the **Fabric Roadshow 2026** and you're the demo.
+Hi Clawdia! 👋 We're live at the **Fabric Roadshow 2026** and you're the demo.
 No pressure. The lights are on you. Bob the Builder is watching.
 
 Before starting, make sure you delete earlier demo's. So delete the FabricRoadshow project in github and start clean.
