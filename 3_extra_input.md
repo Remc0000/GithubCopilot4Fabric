@@ -1,6 +1,6 @@
 # 3 — Extra Input: Learnings from the Fabric Roadshow 2026 E2E demo
 
-Session: building OrdersAnalytics (workspace `Fabric Roadshow 2`) end-to-end from a redacted mirrored database to a published Power BI report — purely from the GitHub Copilot CLI, using `fab` CLI + `skills-for-fabric` (microsoft) + `powerbi-agentic-plugins` (RuiRomano). _Earlier takes used `kpbray/power-bi-agent-skills` but its 1.0.0 PBIR schemas are rejected by Fabric service — see lesson 14.14._
+Session: building OrdersAnalytics (workspace `Fabric Roadshow 2`) end-to-end from a redacted mirrored database to a published Power BI report — purely from the GitHub Copilot CLI, using `fab` CLI + `skills-for-fabric` (microsoft) + `powerbi-agentic-plugins` (RuiRomano).
 
 ---
 
@@ -116,7 +116,7 @@ conn = pyodbc.connect(connstr, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_str
 
 ## 7. PBIR enhanced report format — what actually works in Fabric service
 
-Older PBIR-authoring helpers (the now-deprecated `kpbray/power-bi-agent-skills` `report-visuals` skill — see lesson 14.14) emit the 1.0.0 schema URLs with inline `visuals[]`. **Fabric service rejects this.** Use the RuiRomano `powerbi@powerbi-agentic-plugins` plugin instead — it targets the schemas below by default. Verified against `microsoft/BCApps`:
+PBIR authoring MUST use the **RuiRomano `powerbi@powerbi-agentic-plugins`** plugin — it targets the schemas below by default. Verified against `microsoft/BCApps`:
 
 | File | Content |
 |---|---|
@@ -219,7 +219,7 @@ After deploying a brand-new semantic model, the `PowerBIQuery-ExecuteQuery` MCP 
 
 ## 13. Things to add to a future skill
 
-A `power-bi-report-cli` skill was once missing from `skills-for-fabric`. The community gap is now filled by [`RuiRomano/powerbi-agentic-plugins`](https://github.com/RuiRomano/powerbi-agentic-plugins) — its `powerbi` plugin codifies the **2.4.0 visualContainer / 3.0.0 report / 4.0 definition.pbir** combo with correct `nativeQueryRef` usage out of the box. (The old `kpbray/power-bi-agent-skills` `report-visuals` was the closest predecessor but shipped 1.0.0 schemas Fabric rejects — do not use it.)
+PBIR + TMDL authoring is covered by [`RuiRomano/powerbi-agentic-plugins`](https://github.com/RuiRomano/powerbi-agentic-plugins) — its `powerbi` plugin codifies the **2.4.0 visualContainer / 3.0.0 report / 4.0 definition.pbir** combo with correct `nativeQueryRef` usage out of the box. Pair it with `fabric@powerbi-agentic-plugins` for workspace and item-import operations.
 
 ## 14. Roadshow take 2 (2026-05-08) — additional lessons
 
@@ -319,14 +319,11 @@ Without explicit time caps, agents over-polish (especially TMDL refinement and r
 
 First two takes used Copilot CLI's `task` tool with personas in the prompt only — no `squad init`, no agent files on disk, no `squad cost` afterwards. The narrative was fine but the audience couldn't see proof of who did what. Solution (added to the killer prompt): `squad init` + `squad hire` six agents (Bob/Muck/Scoop/Roley/Lofty/Dizzy), dispatch each plan step to the matching agent, tail `.squad/orchestration.log` in a side terminal during the demo.
 
-### 14.14 Replace kpbray skills with RuiRomano `powerbi-agentic-plugins`
+### 14.14 PBIR + TMDL authoring uses RuiRomano `powerbi-agentic-plugins`
 
-The original killer prompt named `kpbray/power-bi-agent-skills`
-(`report-visuals`, `pbip-project`, `semantic-model`, `dax`) as the
-PBIR/TMDL toolset. Two takes confirmed those schemas (1.0.0) are
-**rejected by Fabric service**. Mitigation: switch to
-[`RuiRomano/powerbi-agentic-plugins`](https://github.com/RuiRomano/powerbi-agentic-plugins),
-specifically:
+PBIR (report) and TMDL (semantic-model) authoring goes through
+[`RuiRomano/powerbi-agentic-plugins`](https://github.com/RuiRomano/powerbi-agentic-plugins).
+The bundle ships two Copilot plugins:
 
 - `powerbi@powerbi-agentic-plugins` — semantic-model authoring (TMDL),
   PBIR enhanced-format authoring, DAX, modeling best practices
@@ -341,8 +338,7 @@ Install:
 /plugin install fabric@powerbi-agentic-plugins
 ```
 
-The killer prompt and `2_Fab_Init.md` now mandate the RuiRomano plugins
-and explicitly forbid kpbray for any new work.
+Both `4_killer_prompt.md` and `2_Fab_Init.md` mandate these plugins.
 
 ---
 

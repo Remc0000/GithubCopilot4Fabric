@@ -36,13 +36,8 @@ Analyse **sales orders by Product Category × City × State** with
   - **`skills-for-fabric`** (microsoft) — already installed at
     `~/.copilot/installed-plugins/fabric-collection/skills-for-fabric`
   - **`powerbi-agentic-plugins`** (RuiRomano) — `powerbi@powerbi-agentic-plugins`
-    and `fabric@powerbi-agentic-plugins`. Already installed.
-  - 🚫 **Do NOT use `kpbray/power-bi-agent-skills`** for ANY task.
-    Its `report-visuals` skill ships PBIR 1.0.0 schemas that Fabric
-    service rejects, and its `pbip-project` skeleton conflicts with
-    the 2.0.0/2.4.0/3.0.0/4.0 layout we now use. If a sub-agent or
-    skill suggestion mentions kpbray, reject it and use the RuiRomano
-    `powerbi` plugin instead.
+    and `fabric@powerbi-agentic-plugins`. Already installed. Use these
+    for ALL TMDL semantic-model work, PBIR report authoring, and DAX.
 - Identity: commit as **`Remc0000`** I'm watching. 👀
   ```
   git -c user.name='Remc0000' -c user.email='223556219+Copilot@users.noreply.github.com' commit ...
@@ -184,10 +179,9 @@ what works. Audience > perfection.
    orders**. (Outlier count target depends on the choice Muck made in
    step 3; just confirm the measure returns a number, don't insist on
    `64`.)
-6. **Roley** — author the **PBIR enhanced format** that Fabric *actually*
-   accepts (use the RuiRomano `powerbi` plugin — its templates already
-   target the right schemas. The old kpbray `report-visuals` 1.0.0
-   schemas DO NOT WORK; ignore them):
+6. **Roley** — author the **PBIR enhanced format** using the RuiRomano
+   `powerbi@powerbi-agentic-plugins` plugin. Its templates target the
+   schemas Fabric service expects:
    - `definition.pbir` → `definitionProperties/2.0.0`, `version: "4.0"`
    - `definition/version.json` → `versionMetadata/1.0.0`, `"2.0.0"` ⚠️ required
    - `definition/report.json` → `report/3.0.0`, object `reportVersionAtImport`
