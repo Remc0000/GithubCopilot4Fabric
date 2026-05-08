@@ -17,6 +17,56 @@ Session: building OrdersAnalytics (workspace `Fabric Roadshow 2`) end-to-end fro
 ➡ This is exactly why the prompt said *"state is not in the data, so add this"*. Always inspect the mirrored schema first (`sys.columns` from the SQL endpoint) — don't trust the source schema docs.
 
 
+## 2. Spark notebooks DO work — the prior session was wrong to skip them
+
+Update from the 2026-05-08 session: a PySpark medallion notebook ran end-to-end on Trial-Remco in **86 seconds** (Bronze read → Silver clean → Gold star schema → validation), producing the same totals as the T-SQL Warehouse build (`$708,690.15` / 32 orders / 64 IQR outliers). The earlier "Spark is a black hole" lesson was overstated — what actually matters is **how you author and submit the notebook**.
+
+### What worked
+
+- **Author as `.py` source, not `.ipynb`.** Fabric notebooks deploy via `fab import` with `--format .py` (note the leading dot — `-f .py` does NOT work, the shorthand fails with `unknown shorthand flag: .py`; you must use the long form `--format .py`).
+- **Folder layout the importer expects:**
+  ```
+  notebooks/01_medallion_build.Notebook/
+      .platform                  # gitIntegration/platformProperties/2.0.0, type=Notebook
+      notebook-content.py        # # Fabric notebook source  +  # CELL ******** delimiters
+  ```
+- **`# CELL ********************` and `# MARKDOWN ********************` are the delimiters** between cells. Each cell ends with a `# METADATA ********************` block (typically just `# META {}`).
+- **The default-lakehouse block in the leading `# META` is mandatory** for `spark.read.format("delta").load(abfss://...)` calls to authenticate without prompting:
+  ```python
+  # META   "dependencies": {
+  # META     "lakehouse": {
+  # META       "default_lakehouse": "<lakehouseGuid>",
+  # META       "default_lakehouse_name": "gold_lh",
+  # META       "default_lakehouse_workspace_id": "<wsGuid>"
+  # META     }
+  # META   }
+  ```
+- **Read mirrored shortcuts directly via ABFSS** — no need to register them in the lakehouse SQL endpoint first:
+  ```python
+  abfss://{WS_ID}@onelake.dfs.fabric.microsoft.com/{BRONZE_ID}/Tables/SalesOrderDetail
+  ```
+  `spark.read.format("delta").load(...)` resolves shortcuts transparently.
+
+### Triggering a run from the CLI
+
+The Items API job endpoint works without any extra permissions and returns a Location header you can poll:
+```bash
+POST https://api.fabric.microsoft.com/v1/workspaces/{ws}/items/{notebookId}/jobs/instances?jobType=RunNotebook
+# returns 202 + Location header pointing at /jobs/instances/{jobId}
+GET  https://api.fabric.microsoft.com/v1/workspaces/{ws}/items/{notebookId}/jobs/instances/{jobId}
+# poll status until Completed | Failed | Cancelled | Deduped
+```
+Audience: `https://api.fabric.microsoft.com` (Items API, not Datasets).
+
+### Lakehouse SQL endpoint discovery is asynchronous
+
+After the notebook writes Delta to `Tables/<name>` via ABFSS, the lakehouse SQL endpoint takes ~30–60 seconds to surface the new tables in `INFORMATION_SCHEMA.TABLES`. Querying `gold_lh.dbo.fact_sales_order` from the warehouse immediately after the job completes returned `Invalid object name`; the same query succeeded a minute later. **Add a small backoff before you validate cross-database from the warehouse** — or validate inside the notebook itself, where the freshly written paths are guaranteed visible.
+
+### When Spark really would have been a trap
+
+The original lesson — Spark diagnostics are unreachable via the Jobs REST API — still holds: `/jobs/instances/{id}/snapshot`, `/logs`, `/sparkUiLink` all 404 or 401. So **if a notebook fails, the only practical signal you get from the CLI is the terminal `status` and `failureReason`**. Mitigation: write the notebook with explicit `print(...)` checkpoints between cells so the failure reason includes a recognisable string, and keep the T-SQL Warehouse path available as a fallback.
+
+
 ## 3. Fabric Warehouse T-SQL gotchas
 
 - ❌ `nvarchar` is NOT supported in DW. Use `varchar(n)` everywhere.
