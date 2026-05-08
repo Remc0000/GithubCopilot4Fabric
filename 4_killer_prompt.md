@@ -31,7 +31,18 @@ Analyse **sales orders by Product Category × City × State** with
   Name. You'll have to be clever. Postal-code prefix → state. Compute
   LineTotal as `OrderQty * UnitPrice * (1 - Discount)`.)
 - Trial capacity **`Trial-Remco`**
-- Skills: **fab CLI**, **skills-for-fabric**, **kpbray/power-bi-agent-skills**
+- Skills (use these — and ONLY these — for Power BI / Fabric work):
+  - **`fab` CLI** for workspace + items administration
+  - **`skills-for-fabric`** (microsoft) — already installed at
+    `~/.copilot/installed-plugins/fabric-collection/skills-for-fabric`
+  - **`powerbi-agentic-plugins`** (RuiRomano) — `powerbi@powerbi-agentic-plugins`
+    and `fabric@powerbi-agentic-plugins`. Already installed.
+  - 🚫 **Do NOT use `kpbray/power-bi-agent-skills`** for ANY task.
+    Its `report-visuals` skill ships PBIR 1.0.0 schemas that Fabric
+    service rejects, and its `pbip-project` skeleton conflicts with
+    the 2.0.0/2.4.0/3.0.0/4.0 layout we now use. If a sub-agent or
+    skill suggestion mentions kpbray, reject it and use the RuiRomano
+    `powerbi` plugin instead.
 - Identity: commit as **`Remc0000`** I'm watching. 👀
   ```
   git -c user.name='Remc0000' -c user.email='223556219+Copilot@users.noreply.github.com' commit ...
@@ -44,7 +55,7 @@ Analyse **sales orders by Product Category × City × State** with
 | 👷 **Bob** | Tech lead, orchestrates the build | skills-for-fabric, fab CLI |
 | 🚜 **Muck** | Bulldozes data into the warehouse | T-SQL, sqldw-authoring-cli |
 | 🏗️ **Scoop** | Scoops up the semantic model in TMDL | powerbi-authoring-cli |
-| 🚧 **Roley** | Rolls out the Power BI report (PBIR) | kpbray report-visuals |
+| 🚧 **Roley** | Rolls out the Power BI report (PBIR) | RuiRomano `powerbi` plugin |
 | 🏎️ **Lofty** | Lifts heavy specs, writes OpenSpec | openspec |
 | 🚒 **Dizzy** | Mixes everything in CI / GitHub | gh CLI |
 
@@ -174,7 +185,9 @@ what works. Audience > perfection.
    step 3; just confirm the measure returns a number, don't insist on
    `64`.)
 6. **Roley** — author the **PBIR enhanced format** that Fabric *actually*
-   accepts (the kpbray 1.0.0 schemas don't — learned that the hard way):
+   accepts (use the RuiRomano `powerbi` plugin — its templates already
+   target the right schemas. The old kpbray `report-visuals` 1.0.0
+   schemas DO NOT WORK; ignore them):
    - `definition.pbir` → `definitionProperties/2.0.0`, `version: "4.0"`
    - `definition/version.json` → `versionMetadata/1.0.0`, `"2.0.0"` ⚠️ required
    - `definition/report.json` → `report/3.0.0`, object `reportVersionAtImport`

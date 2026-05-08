@@ -91,9 +91,7 @@ py -3.13 your_deploy_script.py
 
 Adds Microsoft Fabric skills to Copilot CLI: SQL Warehouse, Spark/Lakehouse, Power BI, Eventhouse/KQL, Eventstream, Dataflows Gen2, search, migrations, and end-to-end medallion architecture.
 
-**Repo:** <https://github.com/microsoft/skills-for-fabric>
-
-### First-time install (inside Copilot CLI)
+**Repo:** <https://github.com/microsoft/skills-for-fabric>### First-time install (inside Copilot CLI)
 
 ```text
 /plugin marketplace add microsoft/skills-for-fabric
@@ -134,6 +132,51 @@ Then **restart Copilot CLI** so the new skills are loaded.
 ```powershell
 $pkg = "$env:USERPROFILE\.copilot\installed-plugins\fabric-collection\skills-for-fabric\package.json"
 if (Test-Path $pkg) { (Get-Content $pkg | ConvertFrom-Json).version }
+```
+
+---
+
+## 5. powerbi-agentic-plugins (RuiRomano) — REQUIRED for Power BI / PBIR work
+
+Adds two Copilot plugins that target the schemas Fabric service actually accepts today (`definitionProperties/2.0.0`, `report/3.0.0`, `visualContainer/2.4.0`, `version 4.0`). Use these for any TMDL semantic-model authoring, PBIR report authoring, DAX, or workspace navigation.
+
+**Repo:** <https://github.com/RuiRomano/powerbi-agentic-plugins>
+
+> ⚠ **Do NOT use `kpbray/power-bi-agent-skills` anymore.** Its
+> `report-visuals` 1.0.0 schemas are rejected by Fabric service, and
+> its `pbip-project` skeleton conflicts with the layout we now use.
+> Two roadshow runs lost ~20 min each fighting this. RuiRomano's
+> templates are correct first try.
+
+### Install (inside Copilot CLI)
+
+```text
+/plugin marketplace add RuiRomano/powerbi-agentic-plugins
+/plugin install powerbi@powerbi-agentic-plugins
+/plugin install fabric@powerbi-agentic-plugins
+```
+
+Or from the host shell:
+
+```powershell
+copilot plugin marketplace add RuiRomano/powerbi-agentic-plugins
+copilot plugin install powerbi@powerbi-agentic-plugins
+copilot plugin install fabric@powerbi-agentic-plugins
+```
+
+After install, **restart Copilot CLI** so the skills load.
+
+### What each plugin gives you
+
+| Plugin | Use it for |
+|---|---|
+| `powerbi@powerbi-agentic-plugins` | Semantic-model authoring (TMDL), PBIR enhanced-format report authoring, DAX query/measure authoring, modelling best practices |
+| `fabric@powerbi-agentic-plugins`  | Workspace navigation, item import/export via REST, Fabric/Power BI REST helpers, OneLake file operations |
+
+### Check installed versions
+
+```powershell
+copilot plugin list | Select-String "powerbi-agentic-plugins"
 ```
 
 ---
@@ -187,6 +230,19 @@ if (Test-Path $pluginDir) {
     Write-Host "  /plugin install fabric-skills@fabric-collection"
 }
 
+# 5. powerbi-agentic-plugins (RuiRomano) --------------------------------------
+Write-Host "`n[5/5] powerbi-agentic-plugins (RuiRomano)" -ForegroundColor Yellow
+$installed = (& copilot plugin list 2>$null) -join "`n"
+if ($installed -match "powerbi-agentic-plugins") {
+    Write-Host "Already installed:"
+    $installed -split "`n" | Select-String "powerbi-agentic-plugins"
+} else {
+    Write-Host "Installing RuiRomano plugins..."
+    copilot plugin marketplace add RuiRomano/powerbi-agentic-plugins | Out-Null
+    copilot plugin install powerbi@powerbi-agentic-plugins
+    copilot plugin install fabric@powerbi-agentic-plugins
+}
+
 Write-Host "`n=== Done. Restart Copilot CLI to pick up plugin changes. ===" -ForegroundColor Green
 ```
 
@@ -201,6 +257,7 @@ fab --version
 py -3.13 -m pip show fabric-cicd | Select-String "Version"
 $pkg = "$env:USERPROFILE\.copilot\installed-plugins\fabric-collection\skills-for-fabric\package.json"
 if (Test-Path $pkg) { "skills-for-fabric: v$((Get-Content $pkg | ConvertFrom-Json).version)" } else { "skills-for-fabric: not installed" }
+copilot plugin list | Select-String "powerbi-agentic-plugins"
 ```
 
 ---

@@ -319,6 +319,31 @@ Without explicit time caps, agents over-polish (especially TMDL refinement and r
 
 First two takes used Copilot CLI's `task` tool with personas in the prompt only — no `squad init`, no agent files on disk, no `squad cost` afterwards. The narrative was fine but the audience couldn't see proof of who did what. Solution (added to the killer prompt): `squad init` + `squad hire` six agents (Bob/Muck/Scoop/Roley/Lofty/Dizzy), dispatch each plan step to the matching agent, tail `.squad/orchestration.log` in a side terminal during the demo.
 
+### 14.14 Replace kpbray skills with RuiRomano `powerbi-agentic-plugins`
+
+The original killer prompt named `kpbray/power-bi-agent-skills`
+(`report-visuals`, `pbip-project`, `semantic-model`, `dax`) as the
+PBIR/TMDL toolset. Two takes confirmed those schemas (1.0.0) are
+**rejected by Fabric service**. Mitigation: switch to
+[`RuiRomano/powerbi-agentic-plugins`](https://github.com/RuiRomano/powerbi-agentic-plugins),
+specifically:
+
+- `powerbi@powerbi-agentic-plugins` — semantic-model authoring (TMDL),
+  PBIR enhanced-format authoring, DAX, modeling best practices
+- `fabric@powerbi-agentic-plugins` — workspace navigation, item
+  import/export, REST helpers, OneLake file ops
+
+Install:
+
+```text
+/plugin marketplace add RuiRomano/powerbi-agentic-plugins
+/plugin install powerbi@powerbi-agentic-plugins
+/plugin install fabric@powerbi-agentic-plugins
+```
+
+The killer prompt and `2_Fab_Init.md` now mandate the RuiRomano plugins
+and explicitly forbid kpbray for any new work.
+
 ---
 
 **Total demo time:** 1h 14m (take 1) → 1h 03m (take 2). Still need to break the 30-minute target — biggest remaining wins:
