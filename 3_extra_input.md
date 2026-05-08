@@ -13,6 +13,7 @@ Session: building OrdersAnalytics (workspace `Fabric Roadshow 2`) end-to-end fro
 | `SalesLT.Address` | `StateProvince`, `CountryRegion` | Derive state from `PostalCode` prefix lookup table |
 | `SalesLT.Product` / `ProductCategory` | `Name` | Hardcoded category names from public AdventureWorksLT taxonomy |
 | `SalesLT.SalesOrderDetail` | `LineTotal` | Compute as `OrderQty * UnitPrice * (1 - UnitPriceDiscount)` |
+| `SalesLT.SalesOrderHeader` | `TotalDue` (and likely `SubTotal`/`TaxAmt`/`Freight` are the *only* money columns) | Aggregate the computed `LineTotal` from `SalesOrderDetail` up to header grain — do NOT reference `TotalDue`, Spark notebooks die mid-run with `System_Cancelled_Session_Statements_Failed` and no useful diagnostics. Confirmed in Roadshow take 2 (2026-05-08 16:xx). |
 
 ➡ This is exactly why the prompt said *"state is not in the data, so add this"*. Always inspect the mirrored schema first (`sys.columns` from the SQL endpoint) — don't trust the source schema docs.
 
@@ -220,8 +221,87 @@ After deploying a brand-new semantic model, the `PowerBIQuery-ExecuteQuery` MCP 
 
 A `power-bi-report-cli` skill is missing from skills-for-fabric. The closest is `report-visuals` from kpbray, but its 1.0.0 schemas don't match what Fabric service currently accepts. A skill that codifies the **2.4.0 visualContainer / 3.0.0 report / 4.0 definition.pbir** combo with `nativeQueryRef` examples would have saved ~20 minutes of trial-and-error in this session.
 
+## 14. Roadshow take 2 (2026-05-08) — additional lessons
+
+Re-ran the same E2E build live on stage, workspace `Fabric Roadshow` on `Trial-Remco`. Total elapsed **1h 03m** — faster than take 1 (1h 14m) thanks to these notes, but still well over the 30-minute target. New findings:
+
+### 14.1 `fab import` from the GitHub Copilot CLI session crashes
+
+Every `fab import …` call from inside the Copilot CLI shell exits with:
+
+```
+No Windows console found. Are you running cmd.exe?
+```
+
+This affected **notebook**, **semantic model**, and **report** imports. The `fab` CLI seems to require an interactive Windows console handle that the Copilot CLI subshell does not provide. There is no `--non-interactive` flag that fixes it.
+
+➡ **Reliable workaround for ALL item imports: use the Items REST API directly.**
+
+| Operation | REST call | Audience |
+|---|---|---|
+| Create new item | `POST /v1/workspaces/{ws}/items` with `{displayName, type, definition:{parts:[{path,payload(b64),payloadType:"InlineBase64"}]}}` | `https://api.fabric.microsoft.com` |
+| Update existing item | `POST /v1/workspaces/{ws}/items/{id}/updateDefinition` with same `definition` shape | `https://api.fabric.microsoft.com` |
+| Get item | `GET /v1/workspaces/{ws}/items/{id}` | `https://api.fabric.microsoft.com` |
+
+Every artefact (notebook, TMDL semantic model, PBIR report) deployed cleanly via this route. Codify this in `skills-for-fabric` rather than relying on `fab import`.
+
+### 14.2 Notebook source format: `.ipynb` beats cell-delimited `.py` over REST
+
+Muck saved a `notebook-content.py` with the documented `# CELL ********` delimiters. Round-tripping through git / REST mangled CRLF line endings and the importer rejected the cells. Switching to a real `notebook-content.ipynb` (JSON) parsed reliably first try. Keep the `.py` as a human-readable mirror, but **deploy the `.ipynb`**.
+
+### 14.3 Direct Lake `Sql.Database()` — use the SQL endpoint GUID, not the lakehouse GUID
+
+TMDL expression:
+
+```
+expression DatabaseQuery =
+    let database = Sql.Database("<sqlEndpointHost>", "<???>")
+    in database
+```
+
+If `<???>` is the **lakehouse GUID** (e.g. `gold_lh.id`), the model deploys but the **first framing refresh fails** (`Refresh failed`, no useful detail). If it is the **SQL endpoint GUID** (the item type `SQLAnalyticsEndpoint` that Fabric auto-creates next to the lakehouse), framing succeeds and DAX works.
+
+➡ Always resolve the SQL endpoint id explicitly:
+
+```bash
+az rest --resource https://api.fabric.microsoft.com \
+  --url "https://api.fabric.microsoft.com/v1/workspaces/{ws}/items?type=SQLAnalyticsEndpoint" \
+  --query "value[?displayName=='<lakehouseName>'].id"
+```
+
+(Type may also list as `SQLEndpoint` depending on tenant — query both.)
+
+### 14.4 IQR outlier detection at order grain on a 32-row dataset = always 0 outliers
+
+The original prompt's target of **64 outliers** was based on **line-level** IQR (542 detail rows). When the fact is aggregated to **order grain (32 rows × 4 categories)**, `1.5 × IQR` is wider than the max within every category, so `IsOutlier = TRUE` for nothing.
+
+➡ For meaningful outlier counts at order grain, either (a) widen the partition (year × category instead of category alone), (b) use a tighter multiplier (1.0 × IQR or z-score > 1), or (c) keep outlier detection at line grain and aggregate `OutlierLineCount` up. Document the chosen rule in the spec — don't hard-code a target number that depends on grain.
+
+### 14.5 PBIR REST deploy — strip unsupported visual fields
+
+Fabric Items API rejects `definition.pbir` reports if any visual JSON contains stray properties not in the `visualContainer/2.4.0` schema (we hit it on `config` and `ordinal`). Error is generic (`InvalidDefinition`), no field pointer. Mitigation: validate every `visual.json` against the published 2.4.0 schema before POSTing, or strip unknown keys after generating from a higher-level template.
+
+### 14.6 `gh repo delete` needs the `delete_repo` OAuth scope
+
+`gh auth refresh -h github.com -s delete_repo` triggers a device-flow login that **blocks indefinitely** in the Copilot CLI shell (no browser, no way to enter the device code). For live demos, **don't try to delete the repo**: instead reset to a clean state with `git init` + `git push -f origin main` of an orphan commit. Same effect, no interactive auth.
+
+### 14.7 OpenSpec — every requirement needs ≥1 scenario, not just SHALL/MUST in the body
+
+Building on lesson 11: even a perfectly worded SHALL requirement fails `--strict` validation with `must include at least one scenario` if you forgot the `#### Scenario:` block. Add a placeholder scenario as soon as you create the requirement heading; flesh it out later.
+
+### 14.8 `openspec init` is interactive
+
+Running `openspec init` in a non-TTY context blocks on a tool-selection prompt. Sending `{enter}` twice picks the defaults and unblocks. Worth a `--yes` / `--defaults` flag upstream.
+
 ---
 
-**Total demo time:** 1h 14m (from `Hi GHCP!` to working visuals on a published report)
-**Final repo:** https://github.com/Remc0000/FabricRoadshow
-**Final workspace:** `Fabric Roadshow 2` on `Trial-Remco.Capacity`
+**Total demo time:** 1h 14m (take 1) → 1h 03m (take 2). Still need to break the 30-minute target — biggest remaining wins:
+1. Skip Spark, build the warehouse path in parallel as a fallback (saves ~5 min when Spark hits a redacted column)
+2. Pre-baked TMDL skeleton + display-name mapping (saves ~10 min)
+3. Pre-baked PBIR skeleton with the 2.4.0 visual templates (saves ~10 min)
+
+**Final repos:**
+- Take 1: https://github.com/Remc0000/FabricRoadshow (now reset for take 2)
+- Take 2: https://github.com/Remc0000/FabricRoadshow
+
+**Final workspace:** `Fabric Roadshow` on `Trial-Remco.Capacity`

@@ -48,6 +48,29 @@ Analyse **sales orders by Product Category × City × State** with
 | 🏎️ **Lofty** | Lifts heavy specs, writes OpenSpec | openspec |
 | 🚒 **Dizzy** | Mixes everything in CI / GitHub | gh CLI |
 
+### 👥 Use a real Squad — don't just role-play
+
+Before you start the plan below, **initialise a Squad** in the project
+and **hire each agent above as a real squad member**, then **delegate
+every task in the plan to the matching squad agent**. Don't fake the
+hand-offs with narration only — actually use `squad` so I can see who
+did what in `squad cost` afterwards.
+
+```powershell
+# In the FabricRoadshow project root:
+squad init                           # markdown-only, default
+squad hire --name Bob   --role tech-lead
+squad hire --name Muck  --role data-engineer
+squad hire --name Scoop --role semantic-model-author
+squad hire --name Roley --role report-author
+squad hire --name Lofty --role spec-author
+squad hire --name Dizzy --role devops
+```
+
+Then for each step below, dispatch the work to the named squad agent
+(via `squad` interactive shell or by invoking the agent persona). The
+plan steps already say which agent owns each step — keep that mapping.
+
 ### 📋 The plan (in this order, no improvising)
 
 1. **Lofty** — write an **OpenSpec** proposal for `add-orders-analytics`,
