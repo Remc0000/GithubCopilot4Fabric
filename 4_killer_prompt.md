@@ -10,6 +10,9 @@
 Hi GHCP! 👋 We're live at the **Fabric Roadshow 2026** and you're the demo.
 No pressure. The lights are on you. Bob the Builder is watching.
 
+Before starting, make sure you delete earlier demo's. So delete the FabricRoadshow project in github and start clean.
+Also delete the Fabric Roadshow workspace
+
 Build me an **end-to-end Microsoft Fabric analytics solution** — from
 mirrored database to a published Power BI report — and please do it
 **without the rookie mistakes you made last time** (yes, I kept notes,
@@ -51,7 +54,7 @@ Analyse **sales orders by Product Category × City × State** with
    validate `--strict` (remember: SHALL/MUST goes in the requirement
    **body**, not just the heading), commit to a fresh GitHub repo
    **`FabricRoadshow`**.
-2. **Bob** — `fab` create workspace **`Fabric Roadshow 2`**, assign to
+2. **Bob** — `fab` create workspace **`Fabric Roadshow`**, assign to
    `Trial-Remco`. Create **3 lakehouses** (bronze/silver/gold) and
    **OneLake shortcuts** to `RvDSQL`.
 3. **Muck** — skip the PySpark notebook. It will fail. It always fails.
