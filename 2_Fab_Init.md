@@ -142,11 +142,6 @@ Adds two Copilot plugins that target the schemas Fabric service actually accepts
 
 **Repo:** <https://github.com/RuiRomano/powerbi-agentic-plugins>
 
-> ⚠ **Do NOT use `kpbray/power-bi-agent-skills` anymore.** Its
-> `report-visuals` 1.0.0 schemas are rejected by Fabric service, and
-> its `pbip-project` skeleton conflicts with the layout we now use.
-> Two roadshow runs lost ~20 min each fighting this. RuiRomano's
-> templates are correct first try.
 
 ### Install (inside Copilot CLI)
 
