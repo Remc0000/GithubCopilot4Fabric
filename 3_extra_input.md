@@ -1,6 +1,6 @@
 # 3 — Extra Input: Learnings from the Fabric Roadshow 2026 E2E demo
 
-Session: building OrdersAnalytics (workspace `Fabric Roadshow 2`) end-to-end from a redacted mirrored database to a published Power BI report — purely from the GitHub Copilot CLI, using `fab` CLI + skills-for-fabric + kpbray/power-bi-agent-skills.
+Session: building OrdersAnalytics (workspace `Fabric Roadshow 2`) end-to-end from a redacted mirrored database to a published Power BI report — purely from the GitHub Copilot CLI, using `fab` CLI + `skills-for-fabric` (microsoft) + `powerbi-agentic-plugins` (RuiRomano). _Earlier takes used `kpbray/power-bi-agent-skills` but its 1.0.0 PBIR schemas are rejected by Fabric service — see lesson 14.14._
 
 ---
 
@@ -116,7 +116,7 @@ conn = pyodbc.connect(connstr, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_str
 
 ## 7. PBIR enhanced report format — what actually works in Fabric service
 
-The `kpbray/power-bi-agent-skills` `report-visuals` skill uses the older 1.0.0 schema URLs with inline `visuals[]`. **Fabric service rejects this.** The actually-working enhanced format (verified against `microsoft/BCApps`):
+Older PBIR-authoring helpers (the now-deprecated `kpbray/power-bi-agent-skills` `report-visuals` skill — see lesson 14.14) emit the 1.0.0 schema URLs with inline `visuals[]`. **Fabric service rejects this.** Use the RuiRomano `powerbi@powerbi-agentic-plugins` plugin instead — it targets the schemas below by default. Verified against `microsoft/BCApps`:
 
 | File | Content |
 |---|---|
@@ -209,17 +209,17 @@ After deploying a brand-new semantic model, the `PowerBIQuery-ExecuteQuery` MCP 
 | Bob the Builder character | Skill / tool |
 |---|---|
 | 🧱 Bob | `fab CLI` workspace + capacity ops |
-| 🪡 Wendy | `semantic-model` + `dax` (kpbray) |
-| 🛠️ Scoop | `pbip-project` (kpbray) folder/pointer files |
+| 🪡 Wendy | `semantic-model` + `dax` (RuiRomano `powerbi@powerbi-agentic-plugins`) |
+| 🛠️ Scoop | `powerbi@powerbi-agentic-plugins` PBIR / pointer files (RuiRomano) |
 | 🚜 Muck | `fab import` for everything |
 | 🌀 Dizzy | `sqldw-authoring-cli` (build_warehouse_v2.py) |
 | 🛞 Roley | OpenSpec proposal + repo init |
-| 🦅 Lofty | `report-visuals` (kpbray) PBIR authoring |
+| 🦅 Lofty | `powerbi@powerbi-agentic-plugins` PBIR authoring (RuiRomano) |
 | 🦘 Travis | git/GitHub commits as `Remc0000` |
 
 ## 13. Things to add to a future skill
 
-A `power-bi-report-cli` skill is missing from skills-for-fabric. The closest is `report-visuals` from kpbray, but its 1.0.0 schemas don't match what Fabric service currently accepts. A skill that codifies the **2.4.0 visualContainer / 3.0.0 report / 4.0 definition.pbir** combo with `nativeQueryRef` examples would have saved ~20 minutes of trial-and-error in this session.
+A `power-bi-report-cli` skill was once missing from `skills-for-fabric`. The community gap is now filled by [`RuiRomano/powerbi-agentic-plugins`](https://github.com/RuiRomano/powerbi-agentic-plugins) — its `powerbi` plugin codifies the **2.4.0 visualContainer / 3.0.0 report / 4.0 definition.pbir** combo with correct `nativeQueryRef` usage out of the box. (The old `kpbray/power-bi-agent-skills` `report-visuals` was the closest predecessor but shipped 1.0.0 schemas Fabric rejects — do not use it.)
 
 ## 14. Roadshow take 2 (2026-05-08) — additional lessons
 
