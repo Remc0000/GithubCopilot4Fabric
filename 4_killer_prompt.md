@@ -71,6 +71,32 @@ Then for each step below, dispatch the work to the named squad agent
 (via `squad` interactive shell or by invoking the agent persona). The
 plan steps already say which agent owns each step — keep that mapping.
 
+### 📺 How to watch the squad work (open a 2nd terminal)
+
+Open a second PowerShell window during the demo and keep these running
+so the audience can see who's doing what in real time:
+
+```powershell
+# 1. Status — which squad is active, where is it rooted
+squad status
+
+# 2. Live progress — tail the orchestration log as agents post updates
+Get-ChildItem .squad -Recurse -Filter *.log -ErrorAction SilentlyContinue
+Get-Content .squad\orchestration.log -Wait -Tail 20    # adjust path if different
+
+# 3. Per-agent token cost (refresh every few seconds)
+while ($true) { Clear-Host; squad cost --all; Start-Sleep 5 }
+
+# 4. The work the squad is creating, on the file system
+Get-ChildItem -Recurse -Force -Filter "*.md" .squad\agents | Select-Object FullName, LastWriteTime |
+  Sort-Object LastWriteTime -Descending | Select-Object -First 10
+```
+
+Also, **Clawdia must announce hand-offs in chat** when she dispatches
+work to a squad agent (`👷 Bob, take it…`) and again when the agent
+reports back (`✅ Bob done — over to 🚜 Muck`). Combined with the live
+terminals above, the audience sees both narration and proof.
+
 ### 📋 The plan (in this order, no improvising)
 
 1. **Lofty** — write an **OpenSpec** proposal for `add-orders-analytics`,
