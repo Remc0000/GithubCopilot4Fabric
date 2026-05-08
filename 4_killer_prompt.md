@@ -57,10 +57,9 @@ Analyse **sales orders by Product Category × City × State** with
 2. **Bob** — `fab` create workspace **`Fabric Roadshow`**, assign to
    `Trial-Remco`. Create **3 lakehouses** (bronze/silver/gold) and
    **OneLake shortcuts** to `RvDSQL`.
-3. **Muck** — Use PySpark notebooks in the . It will fail. It always fails.
-   Go **straight to a T-SQL Warehouse** (`gold_wh`) with a star schema
+3. **Muck** — Use PySpark notebooks using your skills for fabric and end up with a star schema
    (fact_sales_order, dim_product_category, dim_geography, dim_state,
-   dim_date). Cast everything `varchar` — Fabric DW doesn't do nvarchar.
+   dim_date).
 4. **Scoop** — author **TMDL** for a **Direct Lake** semantic model
    `OrdersAnalytics`. Rules of the house:
    - **TABS, not spaces.** Verify 0x09. I'll know.
