@@ -293,6 +293,32 @@ Building on lesson 11: even a perfectly worded SHALL requirement fails `--strict
 
 Running `openspec init` in a non-TTY context blocks on a tool-selection prompt. Sending `{enter}` twice picks the defaults and unblocks. Worth a `--yes` / `--defaults` flag upstream.
 
+### 14.9 The `e2e-medallion-architecture` skill expects 3 notebooks, not 1
+
+Default behaviour of the data-engineering agent was to produce a single `01_medallion_build` notebook covering Bronze + Silver + Gold. The audience couldn't see the layer boundaries on screen, and one cell failure (e.g. missing `TotalDue` column) killed the whole pipeline with no easy partial restart.
+
+➡ Make the prompt **explicit** — three notebooks: `01_bronze_ingest`, `02_silver_clean`, `03_gold_star`. Each with its own default-lakehouse `# META` block matching the layer it writes to. Run them in order via the Items jobs API and gate each on the previous returning `Completed`. Smaller notebooks = faster failure isolation = better demo.
+
+### 14.10 Don't chase the magic outlier count
+
+The original prompt promised "64 outliers" — that number came from a **line-grain** (542-row) IQR computation in an early prototype. When the fact is aggregated to **order grain (32 rows × 4 categories)**, IQR×1.5 always yields 0 outliers. Two reruns wasted ~5 min each "fixing" this.
+
+➡ The prompt now drops the magic number. Either compute outliers at line grain and aggregate `OutlierLineCount` into the fact, or accept `Outlier Count = 0` at order grain. Either way, validate that the measure **returns a number**, not that it equals 64.
+
+### 14.11 Pre-resolve the SQL endpoint GUID before authoring TMDL
+
+Scoop lost ~5 min on a framing failure because `Sql.Database(host, lakehouseGuid)` deploys but cannot frame. The **SQL endpoint GUID** (item type `SQLAnalyticsEndpoint`, auto-created next to the lakehouse) is the right second argument.
+
+➡ Bob should resolve the SQL endpoint GUID right after creating the gold lakehouse and **hand it to Scoop along with the lakehouse GUID and host**. Codify in the workspace handoff message.
+
+### 14.12 Per-stage time budget makes the demo runnable in 30 min
+
+Without explicit time caps, agents over-polish (especially TMDL refinement and report styling). A budget table (Lofty 2 / Bob 4 / Muck 8 / Scoop 7 / Roley 5 / Dizzy 2 = 28 min plus 2 min pre-flight) keeps each stage honest. When a cap is hit, **stop polishing and move on** — audience > perfection. Added to `4_killer_prompt.md`.
+
+### 14.13 Use real squad agents, not narrative role-play
+
+First two takes used Copilot CLI's `task` tool with personas in the prompt only — no `squad init`, no agent files on disk, no `squad cost` afterwards. The narrative was fine but the audience couldn't see proof of who did what. Solution (added to the killer prompt): `squad init` + `squad hire` six agents (Bob/Muck/Scoop/Roley/Lofty/Dizzy), dispatch each plan step to the matching agent, tail `.squad/orchestration.log` in a side terminal during the demo.
+
 ---
 
 **Total demo time:** 1h 14m (take 1) → 1h 03m (take 2). Still need to break the 30-minute target — biggest remaining wins:

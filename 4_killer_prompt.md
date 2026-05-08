@@ -97,6 +97,22 @@ work to a squad agent (`👷 Bob, take it…`) and again when the agent
 reports back (`✅ Bob done — over to 🚜 Muck`). Combined with the live
 terminals above, the audience sees both narration and proof.
 
+### ⏱️ Time budget per stage (target total ≤ 30 min)
+
+| Stage | Owner | Max time |
+|---|---|---|
+| Pre-flight (auth, repo reset, squad init) | Clawdia | 2 min |
+| OpenSpec proposal | 🏎️ Lofty | 2 min |
+| Workspace + 3 lakehouses + shortcuts | 👷 Bob | 4 min |
+| 3 medallion notebooks (Bronze/Silver/Gold) authored + run | 🚜 Muck | 8 min |
+| TMDL Direct Lake model + framing + DAX validation | 🏗️ Scoop | 7 min |
+| PBIR enhanced report deployed | 🚧 Roley | 5 min |
+| Final commit & push | 🚒 Dizzy | 2 min |
+| **Total** | | **30 min** |
+
+If you hit the cap on any stage, **stop polishing** and move on with
+what works. Audience > perfection.
+
 ### 📋 The plan (in this order, no improvising)
 
 1. **Lofty** — write an **OpenSpec** proposal for `add-orders-analytics`,
@@ -106,7 +122,39 @@ terminals above, the audience sees both narration and proof.
 2. **Bob** — `fab` create workspace **`Fabric Roadshow`**, assign to
    `Trial-Remco`. Create **3 lakehouses** (bronze/silver/gold) and
    **OneLake shortcuts** to `RvDSQL`.
-3. **Muck** — Use your data engineering skills to create notebooks for bronze, silver and gold. Make sure you also use markdown to make your code explaineble.
+3. **Muck** — Build a **classic 3-notebook medallion** (this is the
+   standard for the **`e2e-medallion-architecture`** skill, please use
+   it). I want **THREE separate notebooks**, not one mega-notebook:
+   - `01_bronze_ingest.Notebook` — read mirrored shortcuts from `bronze_lh`
+     (raw copy, schema preservation, light typing only). Land Bronze
+     Delta tables in `bronze_lh.Tables.<name>` (or read shortcuts in
+     place if that's cleaner — your call, document why).
+   - `02_silver_clean.Notebook` — clean, dedupe, derive `LineTotal =
+     OrderQty * UnitPrice * (1 - UnitPriceDiscount)`, derive
+     `StateName` from `PostalCode` prefix, hardcode category names.
+     Write to `silver_lh.Tables.*`.
+   - `03_gold_star.Notebook` — build the star schema (`fact_sales_order`,
+     `dim_product_category`, `dim_geography`, `dim_state`, `dim_date`),
+     compute `IsOutlier` (IQR rule — see note below), validate totals
+     with `print()` checkpoints. Write to `gold_lh.Tables.*`.
+
+   For each notebook:
+   - Use Markdown cells generously to explain WHAT and WHY (the audience
+     reads them on screen).
+   - Default lakehouse in the leading `# META` block matches the layer
+     it writes to (bronze_lh / silver_lh / gold_lh respectively).
+   - Author as `.ipynb` (NOT cell-delimited `.py` — CRLF round-trip
+     breaks the parser). Save under `fabric/notebooks/<nn>_<name>.Notebook/`.
+   - Deploy via REST `POST /v1/workspaces/{ws}/items` — `fab import`
+     CRASHES inside this CLI session (`No Windows console found`).
+   - Run them in order via the Items jobs API (Bronze → Silver → Gold)
+     and gate each step on the previous job reporting `Completed`.
+
+   ⚠ **Outlier note:** at order grain (32 rows) `1.5 × IQR` produces
+   ZERO outliers. Don't chase the magic number `64`. Either (a) compute
+   `IsOutlier` at line grain and aggregate `OutlierLineCount` into the
+   fact, or (b) keep order-grain and accept `Outlier Count = 0`. Pick
+   one and move on — don't burn 5 minutes trying to "fix" the count.
 4. **Scoop** — author **TMDL** for a **Direct Lake** semantic model
    `OrdersAnalytics`. Rules of the house:
    - **TABS, not spaces.** Verify 0x09. I'll know.
@@ -116,9 +164,15 @@ terminals above, the audience sees both narration and proof.
      visuals and DAX reference the **display name**, not `sourceColumn`.
      Get this wrong and 11 visuals scream "Can't display". Don't ask
      how I know.
-5. **Scoop** — deploy via `fab import`, then **trigger a Direct Lake
-   framing refresh** (`POST .../refreshes {"type":"Full"}`) before any
-   DAX. Validate: total ≈ **$708,690**, **32 orders**, **64 outliers**.
+5. **Scoop** — deploy via REST `POST /v1/workspaces/{ws}/items` (NOT
+   `fab import` — see lesson 14.1). Use the **SQL endpoint GUID**, not
+   the lakehouse GUID, in `Sql.Database()` — wrong one fails framing.
+   Trigger a Direct Lake **framing refresh** (`POST .../refreshes
+   {"type":"Full"}`) before any DAX. Validate via REST `executeQueries`
+   (NOT the MCP tool — see lesson 10): total ≈ **$708,690**, **32
+   orders**. (Outlier count target depends on the choice Muck made in
+   step 3; just confirm the measure returns a number, don't insist on
+   `64`.)
 6. **Roley** — author the **PBIR enhanced format** that Fabric *actually*
    accepts (the kpbray 1.0.0 schemas don't — learned that the hard way):
    - `definition.pbir` → `definitionProperties/2.0.0`, `version: "4.0"`
