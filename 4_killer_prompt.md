@@ -32,7 +32,7 @@ Analyse **sales orders by Product Category × City × State** with
   LineTotal as `OrderQty * UnitPrice * (1 - Discount)`.)
 - Trial capacity **`Trial-Remco`**
 - Skills: **fab CLI**, **skills-for-fabric**, **kpbray/power-bi-agent-skills**
-- Identity: commit as **`Remc0000`** — NOT `Remc0123`. I'm watching. 👀
+- Identity: commit as **`Remc0000`** I'm watching. 👀
   ```
   git -c user.name='Remc0000' -c user.email='223556219+Copilot@users.noreply.github.com' commit ...
   ```
