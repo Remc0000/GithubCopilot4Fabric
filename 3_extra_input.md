@@ -16,15 +16,6 @@ Session: building OrdersAnalytics (workspace `Fabric Roadshow 2`) end-to-end fro
 
 ➡ This is exactly why the prompt said *"state is not in the data, so add this"*. Always inspect the mirrored schema first (`sys.columns` from the SQL endpoint) — don't trust the source schema docs.
 
-## 2. Spark notebook diagnostics are a black hole
-
-A PySpark medallion notebook failed twice with `System_Cancelled_Session_Statements_Failed`. Tried REST endpoints to retrieve cell-level errors:
-
-- `/jobs/instances/{id}/snapshot` → 404
-- `/jobs/instances/{id}/logs` → unauthorized
-- `/jobs/instances/{id}/sparkUiLink` → 404
-
-➡ **Pivoted to a Fabric T-SQL Warehouse** — built the entire star schema with cross-database queries (`bronze_lh.dbo.<shortcut>` from `gold_wh`). Far more debuggable, no Spark session needed, ran in seconds.
 
 ## 3. Fabric Warehouse T-SQL gotchas
 
