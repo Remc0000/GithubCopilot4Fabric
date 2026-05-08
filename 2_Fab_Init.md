@@ -1,6 +1,6 @@
 # Microsoft Fabric — Copilot CLI Setup Guide
 
-Everything you need on top of [`1_GHCP_Init.md`](GHCP_Init.md) to use **GitHub Copilot CLI with Microsoft Fabric**.
+Everything you need on top of [`1_GHCP_Init.md`](1_GHCP_Init.md) to use **GitHub Copilot CLI with Microsoft Fabric**.
 
 This guide installs:
 
