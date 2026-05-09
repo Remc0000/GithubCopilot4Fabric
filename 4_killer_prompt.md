@@ -10,15 +10,65 @@
 Hi Clawdia! 👋 We're live at the **Fabric Roadshow 2026** and you're the demo.
 No pressure. The lights are on you. Bob the Builder is watching.
 
-Before starting, make sure you delete earlier demo's. So delete the
-FabricRoadshow project in github and start clean. Also delete the
-**Fabric Roadshow** workspace.
+**Don't delete prior demos.** Generate a slug at t = 0 (see §0) and use
+slug-suffixed names for the workspace (`Fabric Roadshow_<slug>`) and
+GitHub repo (`FabricRoadshow_<slug>`). Saves ~60 s, keeps prior runs
+intact for A/B compare, and avoids the device-flow prompt that
+`gh repo delete` triggers.
 
 Build me an **end-to-end Microsoft Fabric analytics solution** — from a
 source lakehouse to a published Power BI report — and please do it
 **without the rookie mistakes you made last time** (yes, I kept notes,
 they're in `C:\Users\revandam\GHCP4Fab\3_extra_input.md` — read them first,
 I'm begging you).
+
+---
+
+## 0. Pre-flight (one PowerShell block, run once at t = 0)
+
+Run this *first*, before anything else. It sets encoding (avoids the
+``[UnexpectedError] charmap`` from ``fab``), generates the slug, prints
+the targets, pre-warms the four audience tokens **in parallel**, and
+scaffolds the squad. After this block returns, t = 0 starts.
+
+```powershell
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+$env:PYTHONIOENCODING     = 'utf-8'
+
+$slug      = "$(Get-Random -Min 1000 -Max 9999)-$((Get-Date).ToString('HHmm'))"
+$WORKSPACE = "Fabric Roadshow_$slug"
+$REPO      = "FabricRoadshow_$slug"
+$REPO_PATH = "C:\Users\revandam\$REPO"
+
+Write-Host "🐾 slug=$slug | ws='$WORKSPACE' | repo=$REPO" -ForegroundColor Cyan
+
+# Pre-warm 4 audience tokens in parallel (≈ 4 s total instead of ~16 s serial)
+$audiences = @(
+  'https://api.fabric.microsoft.com',
+  'https://analysis.windows.net/powerbi/api',
+  'https://storage.azure.com/',
+  'https://database.windows.net/'
+)
+$audiences | ForEach-Object -Parallel {
+  az account get-access-token --resource $_ --query expiresOn -o tsv | Out-Null
+} -ThrottleLimit 4
+
+# Squad scaffold (init works; hire is a stub — author charters by hand)
+New-Item -ItemType Directory -Path $REPO_PATH -Force | Out-Null
+Set-Location $REPO_PATH
+git init -q; squad init | Out-Null
+"slug=$slug`nworkspace=$WORKSPACE`nrepo=$REPO" |
+  Set-Content .squad\identity\now.md -Encoding UTF8
+```
+
+After this block:
+
+- `$WORKSPACE`, `$REPO`, `$slug` are set in the session and printed.
+- Four Azure tokens are warm in cache (next REST call is instant).
+- `.squad/` is initialised; `now.md` records this run's identity.
+- `gh repo create` and `fab create workspace` MUST use `$WORKSPACE` /
+  `$REPO`. Quote them — they contain underscores **and** the workspace
+  name has a space.
 
 ---
 
@@ -333,6 +383,98 @@ Push everything to `https://github.com/Remc0000/FabricRoadshow` as
 
 Wrong audience = silent 401.
 
+### 2.10 Fabric REST URL pin
+
+The Fabric Items API base path is **`/v1/`**, not `/v1.0/`. Last run
+the pipeline deploy 404'd because `/v1.0/` was used. Same convention
+holds for `getDefinition`, `updateDefinition`, `jobs/instances`,
+`shortcuts`, and `jobs/Pipeline/schedules`. The Power BI Datasets API
+base path is `https://api.powerbi.com/v1.0/myorg/...` — that *is*
+`v1.0`. Mix them up and you'll lose 5 minutes to confusion.
+
+### 2.11 Schedule body — Windows time-zone names
+
+The pipeline schedule endpoint
+`POST /v1/workspaces/{ws}/items/{pid}/jobs/Pipeline/schedules` requires
+a **Windows time-zone identifier**, not an IANA one:
+
+```json
+{
+  "enabled": true,
+  "configuration": {
+    "type": "Cron",
+    "interval": 1440,
+    "startDateTime": "<future-ISO-without-Z>",
+    "endDateTime":   "2099-12-31T23:59:59",
+    "localTimeZoneId": "W. Europe Standard Time"
+  }
+}
+```
+
+`Europe/Amsterdam` will be rejected. `interval` is in **minutes**
+(1440 = daily). `startDateTime` must be a future timestamp, no `Z`,
+no offset.
+
+### 2.12 Shared helpers module — write once, reuse three times
+
+Last run I re-implemented `request()` / `token()` / `b64()` three
+times (notebook deploy, pipeline deploy, schedule). Don't. Drop a
+single ``scripts/_fabric.py`` first; every later script imports it.
+
+```python
+# scripts/_fabric.py — single source of truth for REST plumbing
+import base64, json, os, ssl, subprocess, sys, time
+import urllib.request, urllib.error
+
+_TOKENS = {}        # audience -> (token, expires_epoch)
+
+def token(aud="https://api.fabric.microsoft.com"):
+    t = _TOKENS.get(aud)
+    if t and t[1] - time.time() > 120:
+        return t[0]
+    out = subprocess.run(
+        f'az account get-access-token --resource {aud}',
+        capture_output=True, text=True, check=True, shell=True)
+    j = json.loads(out.stdout)
+    exp = time.mktime(time.strptime(j["expiresOn"], "%Y-%m-%d %H:%M:%S.%f"))
+    _TOKENS[aud] = (j["accessToken"], exp)
+    return j["accessToken"]
+
+def request(method, url, body=None, aud="https://api.fabric.microsoft.com",
+            extra_headers=None, timeout=120):
+    headers = {"Authorization": f"Bearer {token(aud)}",
+               "Content-Type": "application/json"}
+    if extra_headers: headers.update(extra_headers)
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    ctx = ssl.create_default_context()
+    last = None
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
+                return r.status, dict(r.headers), r.read().decode()
+        except urllib.error.HTTPError as e:
+            return e.code, dict(e.headers or {}), e.read().decode()
+        except Exception as e:
+            last = e; time.sleep(2 ** attempt)
+    raise last
+
+def b64_file(path):
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
+def wait_op(op_url, aud="https://api.fabric.microsoft.com", every=3):
+    while True:
+        s, h, t = request("GET", op_url, aud=aud)
+        body = json.loads(t) if t else {}
+        st = body.get("status", "?")
+        if st in ("Succeeded", "Failed"): return s, body
+        time.sleep(every)
+```
+
+Subprocess pin: `az` from Python on Windows **needs `shell=True`** —
+the bare-list form fails with `FileNotFoundError [WinError 2]`.
+
 ---
 
 ## 3. The squad — use real agents, **and** use them in parallel
@@ -500,6 +642,34 @@ what works. Audience > perfection.
   move on. The audience is here for the journey, not the stack traces.
 - **No PowerBI MCP cache traps** — use the `executeQueries` REST API for
   fresh Direct Lake models.
+
+---
+
+## 5.5 Smoothness checklist & abort criteria
+
+If by minute X the milestone hasn't fired, **pivot — don't keep
+polishing**:
+
+| By minute | Milestone | If missing → |
+|---|---|---|
+| 2 | Pre-flight green, slug printed, 4 tokens warm | abort, fix auth |
+| 6 | Workspace + 3 schema-enabled lakehouses + 10 shortcuts visible | skip shortcuts, hard-code ABFSS paths |
+| 10 | Bronze notebook deployed (run can finish later) | drop to single-table demo |
+| 18 | Gold notebook `Completed` ($708,690.15 / 32) | use seed data, skip outlier IQR |
+| 22 | TMDL deployed + framing returned 202 | skip hierarchy drill, single bar chart |
+| 28 | PBIR report `Succeeded` | swap to a 1-card report, keep moving |
+| 32 | Pipeline + schedule created | print schedule cron in chat as backup |
+| 35 | Final commit + push | apologise on stage and finish flag anyway 🏁 |
+
+**Three things I will check on you live:**
+
+1. ``.squad/orchestration.log`` has ≥ 12 timestamped lines (start +
+   finish per persona). If it has ≤ 6, the squad framing is cosmetic.
+2. The fan-out at t = 0 is **one tool call** firing 3 background
+   ``task`` agents (preflight, Lofty, Bob). Same at gold-Completed
+   (Scoop, Roley, Dizzy). Sequential is a fail.
+3. Workspace + repo carry the slug. Anything called plain
+   ``Fabric Roadshow`` / ``FabricRoadshow`` means you ignored §0.
 
 ---
 
