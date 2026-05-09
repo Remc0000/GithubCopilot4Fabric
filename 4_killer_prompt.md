@@ -542,33 +542,117 @@ What works in v0.9.1 today:
 
 ### 3.2 Realistic squad recipe (do this, not the stub)
 
+The persona names below (Bob, Muck, Scoop…) are just thematic flavour
+for showmanship — what makes the squad **real** is that each charter
+**binds the persona to the exact skills, agents, and MCP tool families
+from §2.1.1**. A future Clawdia reading the charter must be able to
+tell which tools to call without re-reading the killer prompt.
+
 ```powershell
 # 1. Bootstrap (always works)
 squad init
 
 # 2. Hand-author charters because hire is stubbed.
-#    One folder per persona, identical to what hire would produce.
+#    The 'tools' field is the binding contract — copy/extend from §2.1.1.
 $personas = @(
-  @{name='Bob';   role='tech-lead';              emoji='👷'},
-  @{name='Muck';  role='data-engineer';          emoji='🚜'},
-  @{name='Scoop'; role='semantic-model-author';  emoji='🏗️'},
-  @{name='Roley'; role='report-author';          emoji='🚧'},
-  @{name='Lofty'; role='spec-author';            emoji='🏎️'},
-  @{name='Dizzy'; role='devops';                 emoji='🚒'}
+  @{
+    name='Bob'; emoji='👷'; title='Tech lead — workspace + lakehouses + shortcuts'
+    owns = 'Pre-flight, capacity assignment, workspace, 3 schema-enabled lakehouses, 10 OneLake shortcuts.'
+    tools = @(
+      'skills-for-fabric:FabricAdmin (agent) — workspace + capacity'
+      'fabric-mcp-server-core_create-item — type=Lakehouse with enableSchemas=true'
+      'fabric-mcp-server-onelake_create_directory / onelake_list_files — verify'
+      'fabric-mcp-server-onelake_* — shortcuts'
+      'fab CLI — fallback only when an MCP tool errors'
+    )
+  },
+  @{
+    name='Muck'; emoji='🚜'; title='Data engineer — Bronze/Silver/Gold notebooks'
+    owns = 'Three medallion notebooks, MERGE incremental loads, lineage cols, silver_sources registry, IQR outliers in gold.'
+    tools = @(
+      'e2e-medallion-architecture (skill) — INVOKE FIRST for canonical scaffold + Spark configs per layer'
+      'skills-for-fabric:FabricDataEngineer (agent) — orchestrate the cross-workload flow'
+      'spark-authoring-cli (skill) — notebook deploy + run'
+      'spark-consumption-cli (skill) — read/verify lakehouse data'
+      'fabric-mcp-server-core_create-item — type=Notebook'
+      'fabric-mcp-server-onelake_get_table / list_tables — verify lineage cols'
+    )
+  },
+  @{
+    name='Scoop'; emoji='🏗️'; title='Semantic-model author — TMDL Direct Lake'
+    owns = 'OrdersAnalytics Direct Lake model on gold_lh, Category Hierarchy, hidden lineage cols, framing refresh, DAX validation.'
+    tools = @(
+      'powerbi:powerbi-developer (agent, RuiRomano) — DELEGATE the whole stage'
+      'powerbi-modeling-mcp-model_operations / table_operations / measure_operations'
+      'powerbi-modeling-mcp-relationship_operations / user_hierarchy_operations'
+      'powerbi-modeling-mcp-dax_query_operations — Validate + Execute'
+      'powerbi-semantic-model-authoring (skill) — for any gaps'
+      'PowerBIQuery-ExecuteQuery — one-off reads (use REST executeQueries for fresh deploys, MCP caches)'
+    )
+  },
+  @{
+    name='Roley'; emoji='🚧'; title='Report author — PBIR enhanced'
+    owns = 'OrdersAnalytics_Report PBIR enhanced format with Category Hierarchy drill, every projection has nativeQueryRef.'
+    tools = @(
+      'powerbi:powerbi-developer (agent, RuiRomano) — DELEGATE the whole stage'
+      'powerbi-report-authoring (skill) — RuiRomano patterns'
+      'fabric-mcp-server-core_create-item — type=Report (definition.parts InlineBase64)'
+    )
+  },
+  @{
+    name='Lofty'; emoji='🏎️'; title='Spec author — OpenSpec'
+    owns = 'add-orders-analytics proposal + spec with #### Scenario blocks, validate --strict.'
+    tools = @(
+      'openspec CLI (init, validate --strict) — no skill wrapper exists'
+      'microsoft-skill-creator (skill) — for SHALL/MUST wording patterns'
+    )
+  },
+  @{
+    name='Dizzy'; emoji='🚒'; title='DevOps — pipeline + schedule + CI/git'
+    owns = 'nightly_refresh DataPipeline (Bronze->Silver->Gold->WebActivity framing), 02:00 W. Europe schedule, final commit + push as Remc0000.'
+    tools = @(
+      'skills-for-fabric:FabricDataEngineer (agent) — pipeline authoring'
+      'fabric-mcp-server-core_create-item — type=DataPipeline'
+      'REST POST /v1/workspaces/{ws}/items/{pid}/jobs/Pipeline/schedules — no MCP wrapper, see §2.11'
+      'gh CLI — repo create/push as Remc0000'
+    )
+  }
 )
+
 foreach ($p in $personas) {
   $dir = ".squad/agents/$($p.name.ToLower())"
   New-Item -ItemType Directory -Path $dir -Force | Out-Null
+  $toolsBlock = ($p.tools | ForEach-Object { "- $_" }) -join "`n"
   @"
-# $($p.emoji) $($p.name) — $($p.role)
+# $($p.emoji) $($p.name) — $($p.title)
 
-Charter: see role catalogue (`squad roles --search $($p.role)`).
-Owns: <fill from §2 of killer prompt>
-Reports to: 👷 Bob.
+## Owns
+$($p.owns)
+
+## Tools (binding contract — DO NOT hand-roll alternatives until these fail)
+$toolsBlock
+
+## Hand-off protocol
+- Read this charter before starting.
+- Append to ``.squad/orchestration.log`` on start AND finish:
+  ``<ISO-timestamp> $($p.emoji) $($p.name) <start|finish> <one-liner>``
+- Reports to: 👷 Bob (tech lead).
 "@ | Set-Content "$dir/charter.md" -Encoding UTF8
   "" | Set-Content "$dir/history.md" -Encoding UTF8
 }
+
+squad cast    # show the team is real
 ```
+
+The charter file is now the **binding contract** between persona and
+tools. When a background ``task`` agent is fired for a persona, its
+prompt MUST start with: *"Read your charter at
+``.squad/agents/<name>/charter.md`` and use ONLY the tools listed
+under ``## Tools`` (in the order listed). Hand-rolled REST is allowed
+only as a documented fallback after a listed tool has errored."*
+
+That single instruction is what turns the squad from theatre into a
+real, auditable delegation chain.
 
 ### 3.3 Make the agents *real* — fan out background `task` agents
 
