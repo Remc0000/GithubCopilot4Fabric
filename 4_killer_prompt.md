@@ -10,11 +10,12 @@
 Hi Clawdia! 👋 We're live at the **Fabric Roadshow 2026** and you're the demo.
 No pressure. The lights are on you. Bob the Builder is watching.
 
-Before starting, make sure you delete earlier demo's. So delete the FabricRoadshow project in github and start clean.
-Also delete the Fabric Roadshow workspace
+Before starting, make sure you delete earlier demo's. So delete the
+FabricRoadshow project in github and start clean. Also delete the
+**Fabric Roadshow** workspace.
 
-Build me an **end-to-end Microsoft Fabric analytics solution** — from
-mirrored database to a published Power BI report — and please do it
+Build me an **end-to-end Microsoft Fabric analytics solution** — from a
+source lakehouse to a published Power BI report — and please do it
 **without the rookie mistakes you made last time** (yes, I kept notes,
 they're in `C:\Users\revandam\GHCP4Fab\3_extra_input.md` — read them first,
 I'm begging you).
@@ -23,13 +24,20 @@ I'm begging you).
 
 Analyse **sales orders by Product Category × City × State** with
 **Sum / Avg / Max** order value and **IQR-based outlier detection**.
+Surface a **Product Category hierarchy** (Top Category → Sub-Category)
+the audience can drill through.
 
 ### 🧰 What you have
 
-- Mirrored DB **`RvDSQL`** in workspace **`SalesLT.Workspace`**
-  (AdventureWorksLT — but redacted: no StateProvince, no LineTotal, no
-  Name. You'll have to be clever. Postal-code prefix → state. Compute
-  LineTotal as `OrderQty * UnitPrice * (1 - Discount)`.)
+- Source lakehouse **`SalesLT`** in workspace **`SalesLT`** — full
+  AdventureWorksLT, 10 base tables under the **`SalesLT` schema**:
+  `Address`, `Customer`, `CustomerAddress`, `Product`, `ProductCategory`,
+  `ProductDescription`, `ProductModel`, `ProductModelProductDescription`,
+  `SalesOrderDetail`, `SalesOrderHeader`. Every column you'd expect is
+  there: `ProductCategory.Name`, `ProductCategory.ParentProductCategoryID`,
+  `Address.StateProvince`, `Address.CountryRegion`, `Product.Name`,
+  `SalesOrderDetail.LineTotal`, `SalesOrderHeader.TotalDue`. **No
+  workarounds, no redaction, no hardcoded lookups.** Read the data as it is.
 - Trial capacity **`Trial-Remco`**
 - Skills (use these — and ONLY these — for Power BI / Fabric work):
   - **`fab` CLI** for workspace + items administration
@@ -126,29 +134,47 @@ what works. Audience > perfection.
    **body**, not just the heading), commit to a fresh GitHub repo
    **`FabricRoadshow`**.
 2. **Bob** — `fab` create workspace **`Fabric Roadshow`**, assign to
-   `Trial-Remco`. Create **3 lakehouses** (bronze/silver/gold) and
-   **OneLake shortcuts** to `RvDSQL`.
+   `Trial-Remco`. Create **3 lakehouses** (`bronze_lh`, `silver_lh`,
+   `gold_lh`). Create **OneLake shortcuts** in `bronze_lh` pointing at
+   the `SalesLT` lakehouse Delta tables in workspace `SalesLT`
+   (`Tables/SalesLT/<TableName>` for the 10 base tables we need —
+   views like `vGetAllCategories` are not required).
 3. **Muck** — Build a **classic 3-notebook medallion** (this is the
    standard for the **`e2e-medallion-architecture`** skill, please use
    it). I want **THREE separate notebooks**, not one mega-notebook:
-   - `01_bronze_ingest.Notebook` — read mirrored shortcuts from `bronze_lh`
-     (raw copy, schema preservation, light typing only). Land Bronze
-     Delta tables in `bronze_lh.Tables.<name>` (or read shortcuts in
-     place if that's cleaner — your call, document why).
-   - `02_silver_clean.Notebook` — clean, dedupe, derive `LineTotal =
-     OrderQty * UnitPrice * (1 - UnitPriceDiscount)`, derive
-     `StateName` from `PostalCode` prefix, hardcode category names.
+   - `01_bronze_ingest.Notebook` — read shortcuts from `bronze_lh` in
+     place (raw, schema preserved). Light typing only. Document the
+     read-in-place choice in a Markdown cell.
+   - `02_silver_clean.Notebook` — clean and dedupe; project the
+     columns each downstream layer needs. **Read every name, code,
+     and amount straight from the source** — `ProductCategory.Name`,
+     `Address.StateProvince`, `SalesOrderDetail.LineTotal`, etc. —
+     no derivations of values that already exist in source.
+     Build a **`silver_product_category`** table that materialises
+     the **2-level taxonomy** by self-joining `ProductCategory` on
+     `ParentProductCategoryID = ProductCategoryID`:
+     ```
+     ProductCategoryID  CategoryName       ParentProductCategoryID  TopCategoryName
+     5                  Mountain Bikes     1                        Bikes
+     6                  Road Bikes         1                        Bikes
+     ...
+     ```
+     Top-level rows (where `ParentProductCategoryID IS NULL`) get
+     `TopCategoryName = CategoryName` so the column is never null.
      Write to `silver_lh.Tables.*`.
    - `03_gold_star.Notebook` — build the star schema (`fact_sales_order`,
-     `dim_product_category`, `dim_geography`, `dim_state`, `dim_date`),
-     compute `IsOutlier` (IQR rule — see note below), validate totals
-     with `print()` checkpoints. Write to `gold_lh.Tables.*`.
+     `dim_product_category`, `dim_geography`, `dim_state`, `dim_date`).
+     `dim_product_category` carries `CategoryName` AND `TopCategoryName`
+     so the semantic model can hang a Top → Sub hierarchy off it.
+     `dim_state` comes from `Address.StateProvince` (no postal-code
+     hacks). Compute `IsOutlier` (IQR rule — see note below). Validate
+     totals with `print()` checkpoints. Write to `gold_lh.Tables.*`.
 
    For each notebook:
    - Use Markdown cells generously to explain WHAT and WHY (the audience
      reads them on screen).
    - Default lakehouse in the leading `# META` block matches the layer
-     it writes to (bronze_lh / silver_lh / gold_lh respectively).
+     it writes to (`bronze_lh` / `silver_lh` / `gold_lh` respectively).
    - Author as `.ipynb` (NOT cell-delimited `.py` — CRLF round-trip
      breaks the parser). Save under `fabric/notebooks/<nn>_<name>.Notebook/`.
    - Deploy via REST `POST /v1/workspaces/{ws}/items` — `fab import`
@@ -157,7 +183,7 @@ what works. Audience > perfection.
      and gate each step on the previous job reporting `Completed`.
 
    ⚠ **Outlier note:** at order grain (32 rows) `1.5 × IQR` produces
-   ZERO outliers. Don't chase the magic number `64`. Either (a) compute
+   ZERO outliers. Don't chase a magic number. Either (a) compute
    `IsOutlier` at line grain and aggregate `OutlierLineCount` into the
    fact, or (b) keep order-grain and accept `Outlier Count = 0`. Pick
    one and move on — don't burn 5 minutes trying to "fix" the count.
@@ -166,19 +192,29 @@ what works. Audience > perfection.
    - **TABS, not spaces.** Verify 0x09. I'll know.
    - No manual `lineageTag` on new objects.
    - Relationships use `fromColumn` / `toColumn`, **not** `fromTable`.
-   - Display names with spaces (`'Category Name'`, `'State Name'`) —
-     visuals and DAX reference the **display name**, not `sourceColumn`.
-     Get this wrong and 11 visuals scream "Can't display". Don't ask
-     how I know.
+   - Display names with spaces (`'Category Name'`, `'Top Category Name'`,
+     `'State Name'`) — visuals and DAX reference the **display name**,
+     not `sourceColumn`. Get this wrong and 11 visuals scream "Can't
+     display". Don't ask how I know.
+   - On `dim_product_category`, define a **user hierarchy**:
+     ```
+     hierarchy 'Category Hierarchy'
+         level 'Top Category Name'
+             column: 'Top Category Name'
+         level 'Category Name'
+             column: 'Category Name'
+     ```
+     so visuals can drill from top categories down to leaf categories
+     without any DAX gymnastics.
 5. **Scoop** — deploy via REST `POST /v1/workspaces/{ws}/items` (NOT
    `fab import` — it crashes inside this CLI session). Use the **SQL
    endpoint GUID**, not the lakehouse GUID, in `Sql.Database()` — wrong
    one fails framing. Trigger a Direct Lake **framing refresh** (`POST
    .../refreshes {"type":"Full"}`) before any DAX. Validate via REST
    `executeQueries` (NOT the PowerBIQuery MCP tool — it caches stale
-   model lists): total ≈ **$708,690**, **32 orders**. (Outlier count
-   target depends on the choice Muck made in step 3; just confirm the
-   measure returns a number, don't insist on `64`.)
+   model lists): total ≈ **$708,690**, **32 orders**. Confirm the
+   measure and the hierarchy both return values; outlier-count target
+   depends on the choice Muck made in step 3.
 6. **Roley** — author the **PBIR enhanced format** using the RuiRomano
    `powerbi@powerbi-agentic-plugins` plugin. Its templates target the
    schemas Fabric service expects:
@@ -190,6 +226,8 @@ what works. Audience > perfection.
    - **Every projection needs `nativeQueryRef`** or visuals go dark.
    - Visual types: `clusteredBarChart`, `clusteredColumnChart`, `donutChart`,
      `card`, `tableEx`, `slicer`. (Not `barChart`. Don't try.)
+   - Include at least **one matrix or drill-down bar** that uses the
+     `Category Hierarchy` so the audience sees the Top → Sub drill.
 7. **Dizzy** — commit & push everything to
    `https://github.com/Remc0000/FabricRoadshow` as `Remc0000`.
 
