@@ -56,17 +56,17 @@ then expose them as a 2-level user hierarchy in the semantic model
 
 ---
 
-## 1b. Lineage and audit columns on every silver table
+## 1b. Lineage and audit columns on every table (every layer)
 
-Every silver table — fact, dim, AND the materialised
+Every bronze, silver, and gold table — fact, dim, AND the materialised
 `silver_product_category` — carries three lineage columns plus a
-sibling reference table:
+single sibling reference table living in silver:
 
 | Column | Type | Meaning |
 |---|---|---|
 | `SourceID` | int | FK into `silver_sources` |
-| `IngestionDate` | timestamp | First-write timestamp (`current_timestamp()`) |
-| `LastUpdateDt` | timestamp | Last-write timestamp (`current_timestamp()` on every overwrite) |
+| `IngestionDate` | timestamp | First-write timestamp (insert only) |
+| `LastUpdateDt` | timestamp | Last-write timestamp (bumped on every update) |
 
 `silver_sources` schema:
 
@@ -79,42 +79,174 @@ sibling reference table:
 | `IngestionDate` | timestamp | Same semantics |
 | `LastUpdateDt` | timestamp | Same semantics |
 
-Implementation pattern (apply in a single helper before each write):
+`silver_sources` is the single registry; bronze and gold reference its
+`SourceID` values without duplicating the registry. **It stays out of
+the semantic model.** Hide the three lineage columns in TMDL with
+`isHidden: true` so they don't clutter the report field list.
+
+## 1c. Incremental Delta MERGE pattern
+
+Every layer must be **idempotent under re-run**: running a notebook
+twice in a row should yield `inserted=0, updated=0` on the second pass.
+Use Delta MERGE with the lineage columns as bookkeeping. Boilerplate:
 
 ```python
 from pyspark.sql import functions as F
+from delta.tables import DeltaTable
 
-def stamp(df, source_id):
+def merge_with_lineage(spark, target_table, src_df, key_cols, source_id,
+                       watermark_col="ModifiedDate"):
+    """
+    target_table : "silver_address" — Delta table in the current lakehouse
+    src_df       : DataFrame of new/changed rows from the upstream layer
+    key_cols     : ["AddressID"]  (natural PK list)
+    source_id    : 1              (FK into silver_sources)
+    watermark_col: "ModifiedDate" for source -> bronze;
+                   "LastUpdateDt" for bronze -> silver / silver -> gold
+    Returns: dict(inserted=N, updated=M)
+    """
     now = F.current_timestamp()
-    return (df
-        .withColumn("SourceID",      F.lit(source_id).cast("int"))
-        .withColumn("IngestionDate", now)
-        .withColumn("LastUpdateDt",  now))
 
-# silver_sources — 1 row for this demo, but the table is permanent
-sources = spark.createDataFrame(
-    [(1, "SalesLT", "Lakehouse",
-      "SalesLT/SalesLT.Lakehouse/Tables/SalesLT")],
-    ["SourceID", "SourceName", "SourceSystem", "SourceLocation"])
-stamp(sources, 1).write.mode("overwrite").format("delta") \
-    .saveAsTable("silver_sources")
+    # First run — table doesn't exist yet
+    if not spark.catalog.tableExists(target_table):
+        out = (src_df
+            .withColumn("SourceID",      F.lit(source_id).cast("int"))
+            .withColumn("IngestionDate", now)
+            .withColumn("LastUpdateDt",  now))
+        out.write.format("delta").saveAsTable(target_table)
+        n = out.count()
+        return {"inserted": n, "updated": 0}
 
-# every cleaned table
-silver_address = stamp(addr_clean, 1)
-silver_address.write.mode("overwrite").format("delta") \
-    .saveAsTable("silver_address")
+    tgt = DeltaTable.forName(spark, target_table)
+
+    on = " AND ".join([f"t.{k} = s.{k}" for k in key_cols])
+
+    update_cols = {c: f"s.{c}" for c in src_df.columns if c not in key_cols}
+    update_cols["LastUpdateDt"] = "current_timestamp()"
+
+    insert_cols = {c: f"s.{c}" for c in src_df.columns}
+    insert_cols.update({
+        "SourceID":      f"cast({source_id} as int)",
+        "IngestionDate": "current_timestamp()",
+        "LastUpdateDt":  "current_timestamp()",
+    })
+
+    metrics_before = tgt.toDF().count()
+    (tgt.alias("t")
+        .merge(src_df.alias("s"), on)
+        .whenMatchedUpdate(
+            condition=f"s.{watermark_col} > t.LastUpdateDt",
+            set=update_cols)
+        .whenNotMatchedInsert(values=insert_cols)
+        .execute())
+    # Pull MERGE metrics from the operation log
+    h = tgt.history(1).collect()[0]
+    op = h.operationMetrics or {}
+    return {
+        "inserted": int(op.get("numTargetRowsInserted", 0)),
+        "updated":  int(op.get("numTargetRowsUpdated",  0)),
+    }
 ```
 
-The lineage columns flow through to gold: keep `SourceID`,
-`IngestionDate`, `LastUpdateDt` on `fact_sales_order` and on every
-dimension. **`silver_sources` itself is audit metadata and stays out
-of the semantic model.** Hide the three lineage columns in TMDL with
-`isHidden: true` so they don't clutter the report field list.
+Apply per layer:
 
-When using `mode("overwrite")` for full reloads, set both
-`IngestionDate` and `LastUpdateDt` to `current_timestamp()`. If you
-later move to merge/upsert, set `IngestionDate` only on insert
-(`WHEN NOT MATCHED`) and update `LastUpdateDt` on every match.
+- **Bronze** — `merge_with_lineage(... watermark_col="ModifiedDate", source_id=1)`
+  reading from the OneLake shortcut DataFrame.
+- **Silver** — `merge_with_lineage(... watermark_col="LastUpdateDt", source_id=1)`
+  reading from bronze. Materialise `silver_product_category` from the
+  self-join of the cleaned category table; rebuild it each run (small,
+  derived).
+- **Gold** — `merge_with_lineage(... watermark_col="LastUpdateDt", source_id=1)`
+  per dim and the fact, then **recompute IQR + `IsOutlier` across the
+  whole fact** as a dataset-wide window pass.
+
+Print the returned `{inserted, updated}` per table at the bottom of
+each notebook so the audience sees idempotency live.
+
+## 1d. Fabric Data Pipeline — nightly orchestration
+
+Author one Fabric Data Pipeline (`type: DataPipeline` in the Items
+API) named `nightly_refresh` that chains the three notebooks on
+success and triggers a Direct Lake framing refresh after gold:
+
+```
+[Bronze NB]  ──success──▶  [Silver NB]  ──success──▶  [Gold NB]
+                                                            │ success
+                                                            ▼
+                                            [Web: POST .../refreshes]
+```
+
+Pipeline-content skeleton (JSON, deployed via REST `InlineBase64`):
+
+```json
+{
+  "properties": {
+    "activities": [
+      {
+        "name": "Bronze",
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "<bronzeNbGuid>",
+          "workspaceId": "<wsGuid>"
+        }
+      },
+      {
+        "name": "Silver",
+        "type": "TridentNotebook",
+        "dependsOn": [{ "activity": "Bronze", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": { "notebookId": "<silverNbGuid>", "workspaceId": "<wsGuid>" }
+      },
+      {
+        "name": "Gold",
+        "type": "TridentNotebook",
+        "dependsOn": [{ "activity": "Silver", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": { "notebookId": "<goldNbGuid>", "workspaceId": "<wsGuid>" }
+      },
+      {
+        "name": "FrameDirectLake",
+        "type": "WebActivity",
+        "dependsOn": [{ "activity": "Gold", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": {
+          "url": "https://api.powerbi.com/v1.0/myorg/groups/<wsGuid>/datasets/<modelGuid>/refreshes",
+          "method": "POST",
+          "body": "{\"type\":\"Full\"}",
+          "authentication": { "type": "MSI", "resource": "https://analysis.windows.net/powerbi/api" }
+        }
+      }
+    ]
+  }
+}
+```
+
+Deploy:
+
+```
+POST /v1/workspaces/{ws}/items
+{
+  "displayName": "nightly_refresh",
+  "type": "DataPipeline",
+  "definition": {
+    "parts": [
+      { "path": "pipeline-content.json", "payload": "<base64>", "payloadType": "InlineBase64" },
+      { "path": ".platform",             "payload": "<base64>", "payloadType": "InlineBase64" }
+    ]
+  }
+}
+```
+
+Schedule: pipelines have a separate `/jobScheduler/schedules` endpoint;
+PUT a `Cron` schedule with `interval: "0 2 * * *"`,
+`timeZone: "W. Europe Standard Time"`, `enabled: true`.
+
+```
+POST /v1/workspaces/{ws}/items/{pipelineId}/jobs/instances?jobType=Pipeline
+```
+runs the pipeline on demand for smoke-testing before the schedule kicks
+in.
+
+---
+
+
 
 ---
 

@@ -71,54 +71,91 @@ Top-level rows get `TopCategoryName = CategoryName` so the column is
 never null. Expose it in the semantic model as a 2-level user hierarchy
 (see §2.4).
 
-### 1.5 Lineage and audit columns (silver)
+### 1.5 Lineage and audit columns (every layer)
 
-Every silver table — fact and dim — **must** carry these three columns
-so we can trace any record back to the source and tell when it landed:
+Every table in **every layer** — bronze, silver, gold — **must** carry
+these three columns so we can trace any record back to source and tell
+when it landed:
 
 | Column | Type | Meaning |
 |---|---|---|
-| `SourceID` | int | FK into `silver_sources` (see below) |
-| `IngestionDate` | timestamp | When the row was first written into silver (`current_timestamp()` at insert) |
-| `LastUpdateDt` | timestamp | When the row was last modified in silver (`current_timestamp()` on the latest write) |
+| `SourceID` | int | FK into `silver_sources` (registry lives in silver, FK referenced from all layers) |
+| `IngestionDate` | timestamp | First-write timestamp (set on insert only) |
+| `LastUpdateDt` | timestamp | Last-write timestamp (bumped on every update) |
 
-Plus a dedicated reference table:
+Plus a dedicated reference table `silver_sources` — registry of every
+system feeding the platform:
 
-- `silver_sources` — registry of every system feeding silver. Columns:
-  - `SourceID` (int, PK)
-  - `SourceName` (string) — friendly name, e.g. `SalesLT`
-  - `SourceSystem` (string) — kind of system, e.g. `Lakehouse`, `Mirrored Azure SQL`,
-    `OneLake Shortcut`
-  - `SourceLocation` (string) — workspace + lakehouse / table path that
-    the data came from
-  - `IngestionDate`, `LastUpdateDt` (timestamps) — same semantics as on
-    the data tables, applied to the registry row itself
+- `SourceID` (int, PK)
+- `SourceName` (string) — friendly name, e.g. `SalesLT`
+- `SourceSystem` (string) — kind of system, e.g. `Lakehouse`,
+  `Mirrored Azure SQL`, `OneLake Shortcut`
+- `SourceLocation` (string) — workspace + lakehouse / table path that
+  the data came from
+- `IngestionDate`, `LastUpdateDt` — same semantics as on the data tables
 
-For this demo there's exactly one source row, but every fact/dim row in
-silver still has to point at it via `SourceID`. The same three columns
-flow through to gold — keep `SourceID`, `IngestionDate`, `LastUpdateDt`
-on `fact_sales_order` and on every dim. The `silver_sources` table
-itself is not surfaced in the semantic model; it's audit metadata.
+For this demo there's exactly one source row, but every fact/dim/bronze
+row still has to point at it via `SourceID`. The `silver_sources` table
+is the single registry; bronze and gold reference its `SourceID` values
+without duplicating the registry. It is **not** surfaced in the
+semantic model — audit metadata only.
 
-### 1.6 Outliers
+### 1.6 Incremental load (every layer)
+
+Every layer supports **incremental loads**, not full-refresh. Re-running
+the whole pipeline twice in a row must produce zero updates on the
+second run. Use the lineage columns as the bookkeeping:
+
+- **Bronze** — MERGE from the source lakehouse shortcuts into bronze
+  Delta tables, keyed on each source table's natural PK, watermarked on
+  source `ModifiedDate`:
+  - `WHEN MATCHED AND source.ModifiedDate > target.LastUpdateDt`
+    → update data columns + bump `LastUpdateDt = current_timestamp()`,
+    keep `IngestionDate` and `SourceID` unchanged.
+  - `WHEN NOT MATCHED` → insert with `IngestionDate = LastUpdateDt =
+    current_timestamp()`, stamp `SourceID = 1`.
+- **Silver** — MERGE from bronze using the same pattern. Watermark on
+  `bronze.LastUpdateDt > silver.LastUpdateDt` so silver only re-runs
+  rows that bronze just touched. The materialised
+  `silver_product_category` is rebuilt from the (now small) silver
+  category table on each run — it's a derivation, not a copy.
+  `silver_sources` is upserted on `SourceID` (idempotent).
+- **Gold** — MERGE from silver into the star schema. Each dim is keyed
+  on its natural key (`ProductCategoryID`, `City+State`, `StateName`,
+  date), `fact_sales_order` is keyed on `SalesOrderID`. Watermark on
+  `silver.LastUpdateDt > gold.LastUpdateDt`. **Recompute the IQR
+  boundaries across the full fact** after each MERGE (IQR is a window
+  function over the whole dataset, not per-row), then update only the
+  `IsOutlier` column on the affected rows.
+
+The first run is, by definition, "incremental from empty" — every row
+is `NOT MATCHED` and gets inserted. Validate by re-running every
+notebook back-to-back: each one must report `inserted=0, updated=0` on
+the second pass. Print those counters at the end of each notebook so
+the audience sees idempotency live.
+
+### 1.7 Nightly orchestration — Data Factory pipeline
 
 IQR rule on `OrderValue`, computed at order grain or line grain — your
 call. At order grain (32 rows × 4 categories), `1.5 × IQR` will yield
 **0 outliers**. Don't chase a magic number; pick one approach and
 validate that the measure returns a number.
 
-### 1.7 The deliverable
+### 1.9 The deliverable
 
 - GitHub repo `Remc0000/FabricRoadshow` containing the OpenSpec, the
-  3 medallion notebooks, the TMDL semantic model, and the PBIR report,
-  all committed as `Remc0000`.
+  3 medallion notebooks, the TMDL semantic model, the PBIR report,
+  and the `nightly_refresh` pipeline definition, all committed as
+  `Remc0000`.
 - Fabric workspace `Fabric Roadshow` on `Trial-Remco` capacity, holding
   3 lakehouses (`bronze_lh`, `silver_lh`, `gold_lh`), a Direct Lake
-  semantic model `OrdersAnalytics`, and a published report
-  `OrdersAnalytics_Report`.
+  semantic model `OrdersAnalytics`, a published report
+  `OrdersAnalytics_Report`, and a scheduled pipeline `nightly_refresh`.
 - Source-vs-model validation: model `[Sum Order Value] ≈ $708,690.15`
   and `[Order Count] = 32`, matching `SUM(SalesLT.SalesOrderDetail.LineTotal)`
   in source.
+- Idempotency check: the silver notebook re-run reports `inserted=0,
+  updated=0` when source hasn't changed.
 
 ---
 
@@ -151,12 +188,19 @@ This is the **`e2e-medallion-architecture`** skill standard — please
 use it. **THREE separate notebooks**, not one mega-notebook:
 
 - **`01_bronze_ingest.Notebook`** (default lakehouse `bronze_lh`)
-  - Read shortcuts in place; raw, schema preserved; light typing only.
-  - Document the read-in-place choice in a Markdown cell.
+  - Source shortcuts under `Tables/SalesLT/<TableName>` are the input.
+  - **MERGE-load** each source table into a bronze Delta table keyed on
+    the source's natural PK, watermarked on `source.ModifiedDate >
+    target.LastUpdateDt` (see §1.6). Stamp every bronze table with
+    `SourceID`, `IngestionDate`, `LastUpdateDt` (§1.5).
+  - Schema preserved; only light typing. Print `inserted=…, updated=…`
+    counters per table.
 
 - **`02_silver_clean.Notebook`** (default lakehouse `silver_lh`)
+  - Read from bronze (NOT from the source shortcuts — bronze is the
+    contract).
   - Clean + dedupe; project the columns each downstream layer needs.
-  - **Read every name, code, and amount straight from source** —
+  - **Read every name, code, and amount straight from bronze** —
     `ProductCategory.Name`, `Address.StateProvince`,
     `SalesOrderDetail.LineTotal`, etc. No derivations of values that
     already exist in source.
@@ -164,15 +208,18 @@ use it. **THREE separate notebooks**, not one mega-notebook:
     (`SourceID = 1`, `SourceName = 'SalesLT'`,
     `SourceSystem = 'Lakehouse'`, `SourceLocation` =
     `SalesLT/SalesLT.Lakehouse/Tables/SalesLT`, plus the audit
-    timestamps).
-  - **Stamp every silver table** (the cleaned base tables AND the
-    materialised `silver_product_category` from the self-join) with
-    `SourceID`, `IngestionDate`, and `LastUpdateDt` (`current_timestamp()`).
-  - Materialise `silver_product_category` by self-joining
-    `ProductCategory` on `ParentProductCategoryID = ProductCategoryID`,
+    timestamps). MERGE on `SourceID` so re-runs are idempotent.
+  - **MERGE-load** each cleaned table from bronze, keyed on natural PK,
+    watermarked on `bronze.LastUpdateDt > silver.LastUpdateDt`. Stamp
+    every silver table with `SourceID`, `IngestionDate`, `LastUpdateDt`
+    (§1.5).
+  - Materialise `silver_product_category` by self-joining the cleaned
+    `silver_product_category_raw` (or whatever you name the cleaned
+    `ProductCategory`) on `ParentProductCategoryID = ProductCategoryID`,
     keeping both `CategoryName` and `TopCategoryName` (top-level rows
-    coalesce `TopCategoryName = CategoryName`).
-  - Write to `silver_lh.Tables.*`.
+    coalesce `TopCategoryName = CategoryName`). Rebuild it on each run
+    — it's a small derivation.
+  - Print `inserted=…, updated=…` counters per table.
 
 - **`03_gold_star.Notebook`** (default lakehouse `gold_lh`)
   - Build the star schema (`fact_sales_order`, `dim_product_category`,
@@ -180,12 +227,17 @@ use it. **THREE separate notebooks**, not one mega-notebook:
   - `dim_product_category` carries `CategoryName` AND `TopCategoryName`
     so the model can hang the Top → Sub hierarchy off it.
   - `dim_state` comes from `Address.StateProvince` (no postal-code hacks).
-  - **Carry the lineage columns through.** `fact_sales_order` and every
-    dim must keep `SourceID`, `IngestionDate`, `LastUpdateDt`. Do NOT
-    surface `silver_sources` itself in gold or in the semantic model —
-    it's audit metadata.
-  - Compute `IsOutlier` (IQR rule); validate totals with `print()`
-    checkpoints. Write to `gold_lh.Tables.*`.
+  - **MERGE-load** every dim and the fact, keyed on natural keys
+    (`ProductCategoryID`, `City+State`, `StateName`, date,
+    `SalesOrderID`), watermarked on `silver.LastUpdateDt >
+    gold.LastUpdateDt` (§1.6). Carry `SourceID`, `IngestionDate`,
+    `LastUpdateDt` end-to-end. Do NOT surface `silver_sources` in
+    gold or in the semantic model — it's audit metadata.
+  - After the fact MERGE, **recompute IQR boundaries across the full
+    fact** and update `IsOutlier` (IQR is a dataset-wide window
+    function; per-row recompute is wrong).
+  - Validate totals with `print()` checkpoints; print `inserted=…,
+    updated=…` counters. Write to `gold_lh.Tables.*`.
 
 For each notebook: author as `.ipynb` (NOT cell-delimited `.py` — CRLF
 round-trip breaks the parser). Save under
@@ -250,12 +302,27 @@ Write a proposal for `add-orders-analytics`, validate `--strict`
 every requirement needs at least one `#### Scenario:` block), commit
 to a fresh GitHub repo `FabricRoadshow`.
 
-### 2.7 Final commit & push (🚒 Dizzy)
+### 2.7 Nightly pipeline (🚒 Dizzy)
+
+Author a Fabric Data Pipeline `nightly_refresh` (Items API
+`type: DataPipeline`) with three Notebook activities chained on success:
+`Bronze → Silver → Gold`. Add a final Web activity (or notebook cell)
+that POSTs `{"type":"Full"}` to the `OrdersAnalytics` model's
+`/refreshes` endpoint so Direct Lake re-frames after gold completes.
+Attach a **daily schedule** at 02:00 Europe/Amsterdam.
+
+Save the pipeline definition under
+`fabric/pipelines/nightly_refresh.DataPipeline/` (mirror the platform
++ pipeline-content layout used by the notebooks). Deploy via REST
+`POST /v1/workspaces/{ws}/items` with `type: DataPipeline` — same
+`definition.parts` envelope as notebooks, `payloadType: InlineBase64`.
+
+### 2.8 Final commit & push (🚒 Dizzy)
 
 Push everything to `https://github.com/Remc0000/FabricRoadshow` as
 `Remc0000`.
 
-### 2.8 API audiences (memorise — do not mix)
+### 2.9 API audiences (memorise — do not mix)
 
 | Operation | Audience |
 |---|---|
@@ -311,18 +378,19 @@ narration and proof.
 
 ---
 
-## 4. Time budget per stage (target total ≤ 30 min)
+## 4. Time budget per stage (target total ≤ 35 min)
 
 | Stage | Owner | Max time |
 |---|---|---|
 | Pre-flight (auth, repo reset, squad init) | Clawdia | 2 min |
 | OpenSpec proposal | 🏎️ Lofty | 2 min |
 | Workspace + 3 lakehouses + shortcuts | 👷 Bob | 4 min |
-| 3 medallion notebooks (Bronze/Silver/Gold) authored + run | 🚜 Muck | 8 min |
+| 3 medallion notebooks (Bronze/Silver/Gold) authored + run | 🚜 Muck | 9 min |
 | TMDL Direct Lake model + framing + DAX validation | 🏗️ Scoop | 7 min |
 | PBIR enhanced report deployed | 🚧 Roley | 5 min |
+| `nightly_refresh` pipeline + schedule | 🚒 Dizzy | 4 min |
 | Final commit & push | 🚒 Dizzy | 2 min |
-| **Total** | | **30 min** |
+| **Total** | | **35 min** |
 
 If you hit the cap on any stage, **stop polishing** and move on with
 what works. Audience > perfection.
