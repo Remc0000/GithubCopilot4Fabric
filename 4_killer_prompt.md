@@ -224,6 +224,37 @@ validate that the measure returns a number.
   git -c user.name='Remc0000' -c user.email='223556219+Copilot@users.noreply.github.com' commit ...
   ```
 
+### 2.1.1 Skill-and-agent matrix — NON-NEGOTIABLE
+
+This is the part Clawdia skipped last run. **Every stage MUST be
+driven through the matching skill or agent**, not by hand-rolling REST
+calls or one-off scripts. Hand-rolling is faster in the moment and
+costs you the documented best practices the skills exist to enforce.
+
+| Stage | Owner | MUST invoke (in this order, fall back only if first fails) |
+|---|---|---|
+| Pre-flight, workspace, capacity, lakehouses, shortcuts | 👷 Bob | 1. ``skills-for-fabric:FabricAdmin`` agent for workspace + capacity assignment <br>2. ``fabric-mcp-server-core_create-item`` for each lakehouse (with ``enableSchemas: true``) <br>3. ``fabric-mcp-server-onelake_*`` for shortcut creation and verification <br>4. ``fab`` CLI only as fallback when an MCP tool errors |
+| Medallion notebook authoring + run | 🚜 Muck | 1. **Invoke the ``e2e-medallion-architecture`` skill FIRST** to get the canonical Bronze/Silver/Gold scaffold and Spark configs per layer <br>2. ``skills-for-fabric:FabricDataEngineer`` agent to orchestrate the cross-workload flow <br>3. ``spark-authoring-cli`` skill for notebook deploy + run <br>4. Hand-rolled REST only if all of the above fail |
+| TMDL Direct Lake semantic model | 🏗️ Scoop | 1. Delegate to the ``powerbi:powerbi-developer`` agent (RuiRomano) <br>2. That agent drives the ``powerbi-modeling-mcp-*`` tools (model_operations, table_operations, relationship_operations, measure_operations, user_hierarchy_operations) <br>3. ``powerbi-semantic-model-authoring`` skill for any gaps |
+| DAX validation | 🏗️ Scoop | 1. ``PowerBIQuery-ExecuteQuery`` for one-off reads (note: caches model lists for fresh deploys — use REST ``executeQueries`` if model just deployed) <br>2. ``powerbi-modeling-mcp-dax_query_operations`` for validate-and-execute |
+| PBIR enhanced report | 🚧 Roley | 1. Delegate to the ``powerbi:powerbi-developer`` agent <br>2. That agent uses the ``powerbi-report-authoring`` skill (RuiRomano patterns) <br>3. Deploy via ``fabric-mcp-server-core_create-item`` |
+| OpenSpec proposal | 🏎️ Lofty | 1. ``openspec`` CLI directly (no skill wrapper exists) — but lean on the ``microsoft-skill-creator`` patterns for SHALL/MUST wording and ``#### Scenario:`` blocks |
+| Pipeline + schedule | 🚒 Dizzy | 1. ``skills-for-fabric:FabricDataEngineer`` to author the chain <br>2. ``fabric-mcp-server-core_create-item`` (type=DataPipeline) <br>3. REST for ``/jobs/Pipeline/schedules`` (no MCP wrapper) |
+
+**Audit rule** — at the finish flag, the agent MUST list which skills
+and MCP tool families were actually called. If the only entries are
+``fab`` and ``urllib.request``, that's a fail — re-run.
+
+**Forbidden pattern**: hand-writing ``urllib.request`` deploy scripts
+when ``fabric-mcp-server-core_create-item`` exists. The MCP tool
+handles auth, polling, retries, and emits structured results — your
+hand-rolled retry helper does not.
+
+**The skills are not optional decoration.** They encode the lessons
+from prior demos. Skipping them is how Clawdia ends up re-discovering
+the schema-lowercase bug or the ``/v1/`` path or the Windows TZ name
+on stage. Use the skills, save the surprises for the audience.
+
 ### 2.2 Workspace + lakehouses (👷 Bob)
 
 - `fab` create workspace **`Fabric Roadshow`**, assign to `Trial-Remco`.
