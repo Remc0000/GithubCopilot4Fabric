@@ -56,6 +56,68 @@ then expose them as a 2-level user hierarchy in the semantic model
 
 ---
 
+## 1b. Lineage and audit columns on every silver table
+
+Every silver table — fact, dim, AND the materialised
+`silver_product_category` — carries three lineage columns plus a
+sibling reference table:
+
+| Column | Type | Meaning |
+|---|---|---|
+| `SourceID` | int | FK into `silver_sources` |
+| `IngestionDate` | timestamp | First-write timestamp (`current_timestamp()`) |
+| `LastUpdateDt` | timestamp | Last-write timestamp (`current_timestamp()` on every overwrite) |
+
+`silver_sources` schema:
+
+| Column | Type | Notes |
+|---|---|---|
+| `SourceID` | int | Primary key |
+| `SourceName` | string | Friendly name, e.g. `SalesLT` |
+| `SourceSystem` | string | `Lakehouse`, `Mirrored Azure SQL`, `OneLake Shortcut`, … |
+| `SourceLocation` | string | Workspace + lakehouse / table path |
+| `IngestionDate` | timestamp | Same semantics |
+| `LastUpdateDt` | timestamp | Same semantics |
+
+Implementation pattern (apply in a single helper before each write):
+
+```python
+from pyspark.sql import functions as F
+
+def stamp(df, source_id):
+    now = F.current_timestamp()
+    return (df
+        .withColumn("SourceID",      F.lit(source_id).cast("int"))
+        .withColumn("IngestionDate", now)
+        .withColumn("LastUpdateDt",  now))
+
+# silver_sources — 1 row for this demo, but the table is permanent
+sources = spark.createDataFrame(
+    [(1, "SalesLT", "Lakehouse",
+      "SalesLT/SalesLT.Lakehouse/Tables/SalesLT")],
+    ["SourceID", "SourceName", "SourceSystem", "SourceLocation"])
+stamp(sources, 1).write.mode("overwrite").format("delta") \
+    .saveAsTable("silver_sources")
+
+# every cleaned table
+silver_address = stamp(addr_clean, 1)
+silver_address.write.mode("overwrite").format("delta") \
+    .saveAsTable("silver_address")
+```
+
+The lineage columns flow through to gold: keep `SourceID`,
+`IngestionDate`, `LastUpdateDt` on `fact_sales_order` and on every
+dimension. **`silver_sources` itself is audit metadata and stays out
+of the semantic model.** Hide the three lineage columns in TMDL with
+`isHidden: true` so they don't clutter the report field list.
+
+When using `mode("overwrite")` for full reloads, set both
+`IngestionDate` and `LastUpdateDt` to `current_timestamp()`. If you
+later move to merge/upsert, set `IngestionDate` only on insert
+(`WHEN NOT MATCHED`) and update `LastUpdateDt` on every match.
+
+---
+
 ## 2. Three-notebook medallion (Bronze / Silver / Gold)
 
 The `e2e-medallion-architecture` skill standard is **one notebook per
