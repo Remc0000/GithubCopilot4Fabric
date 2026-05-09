@@ -335,7 +335,7 @@ Wrong audience = silent 401.
 
 ---
 
-## 3. The squad — use real agents, not narrative role-play
+## 3. The squad — use real agents, **and** use them in parallel
 
 | Agent | Role | Tools |
 |---|---|---|
@@ -346,35 +346,131 @@ Wrong audience = silent 401.
 | 🏎️ **Lofty** | Lifts heavy specs, writes OpenSpec | openspec |
 | 🚒 **Dizzy** | Mixes everything in CI / GitHub | gh CLI |
 
-Initialise a Squad in the project and hire each agent as a real squad
-member, then delegate every step to the matching squad agent — don't
-fake the hand-offs with narration only:
+### 3.1 What squad v0.9.1 actually does (read this first)
+
+Reality check from the last run: **`squad hire` is a stub** — it prints
+`(full implementation pending)` and exits. So Clawdia, do NOT skip this
+section by typing `squad hire` six times and assuming agents got hired.
+They didn't. Last time I narrated hand-offs but only fired two real
+parallel background agents and serialised the rest. Don't repeat that.
+
+What works in v0.9.1 today:
+
+| Command | Status |
+|---|---|
+| `squad init` | ✅ creates `.squad/` with templates, identity, log, config |
+| `squad roles` | ✅ list built-in role catalogue (use as charter inspiration) |
+| `squad cast` | ✅ shows current session cast |
+| `squad cost --all` | ✅ token-usage breakdown — perfect for the second screen |
+| `squad triage` / `squad loop` | ✅ scan for work, Ralph-mode work loop |
+| `squad delegate <squad> <desc>` | ✅ create work in another squad |
+| `squad status` / `squad doctor` | ✅ diagnostics |
+| `squad hire` | 🟥 **stub** — prints "implementation pending" |
+
+### 3.2 Realistic squad recipe (do this, not the stub)
 
 ```powershell
-squad init                           # markdown-only, default
-squad hire --name Bob   --role tech-lead
-squad hire --name Muck  --role data-engineer
-squad hire --name Scoop --role semantic-model-author
-squad hire --name Roley --role report-author
-squad hire --name Lofty --role spec-author
-squad hire --name Dizzy --role devops
+# 1. Bootstrap (always works)
+squad init
+
+# 2. Hand-author charters because hire is stubbed.
+#    One folder per persona, identical to what hire would produce.
+$personas = @(
+  @{name='Bob';   role='tech-lead';              emoji='👷'},
+  @{name='Muck';  role='data-engineer';          emoji='🚜'},
+  @{name='Scoop'; role='semantic-model-author';  emoji='🏗️'},
+  @{name='Roley'; role='report-author';          emoji='🚧'},
+  @{name='Lofty'; role='spec-author';            emoji='🏎️'},
+  @{name='Dizzy'; role='devops';                 emoji='🚒'}
+)
+foreach ($p in $personas) {
+  $dir = ".squad/agents/$($p.name.ToLower())"
+  New-Item -ItemType Directory -Path $dir -Force | Out-Null
+  @"
+# $($p.emoji) $($p.name) — $($p.role)
+
+Charter: see role catalogue (`squad roles --search $($p.role)`).
+Owns: <fill from §2 of killer prompt>
+Reports to: 👷 Bob.
+"@ | Set-Content "$dir/charter.md" -Encoding UTF8
+  "" | Set-Content "$dir/history.md" -Encoding UTF8
+}
 ```
 
-Open a second PowerShell window during the demo so the audience can see
-who's doing what in real time:
+### 3.3 Make the agents *real* — fan out background `task` agents
+
+Every persona MUST be driven by a real **background `task` agent** that
+reads its charter and reports back. Drop the narrative-only hand-offs.
+
+**Critical parallelism rule** — last run cost 70+ min by serialising.
+This run, fire **multiple background `task` agents in ONE tool call**
+at every fan-out point:
+
+- **t = 0** (before any Fabric work): fire 3 background agents
+  simultaneously — preflight cleanup (Clawdia direct), 🏎️ **Lofty**
+  (OpenSpec), 👷 **Bob** (workspace + 3 lakehouses + 10 shortcuts).
+- **As soon as 🚜 Muck's gold notebook reports `Completed`**: fire
+  3 more background agents in ONE tool call — 🏗️ **Scoop** (TMDL),
+  🚧 **Roley** (PBIR shell, with placeholder `semanticModelId` to be
+  swapped at deploy), 🚒 **Dizzy** (pipeline JSON, model ID
+  placeholder). NEVER wait for Scoop before launching Roley/Dizzy —
+  they're independent except for a 30-second model-ID swap at the
+  very end.
+- The two long poles in the run are Scoop (~12 min, REST polling for
+  async deploy + framing + DAX) and Roley (~20 min, lots of visual
+  JSON). They MUST overlap or you blow past 30 min.
+
+Each background agent's prompt MUST end with: *"Append a line to
+`.squad/orchestration.log` when you start and when you finish: format
+`<ISO-timestamp> <emoji> <name> <state> <one-line-summary>`."* That
+log file is what powers the second-window tail.
+
+### 3.4 Don't destroy — version with a unique slug
+
+Last run wasted ~60s deleting the `Fabric Roadshow` workspace and
+force-pushing the GitHub repo to an empty orphan, plus risked the
+device-flow prompt that `gh repo delete` triggers. Don't.
+
+At t = 0 generate a short slug (`brave-otter`, `2026-05-09-1042`, etc.)
+and use it everywhere:
 
 ```powershell
-squad status
-Get-Content .squad\orchestration.log -Wait -Tail 20
+$slug = "$(Get-Random -Minimum 1000 -Maximum 9999)-$((Get-Date).ToString('HHmm'))"
+$WORKSPACE = "Fabric Roadshow_$slug"
+$REPO      = "FabricRoadshow_$slug"
+"slug=$slug`nworkspace=$WORKSPACE`nrepo=$REPO" |
+  Set-Content .squad\identity\now.md -Encoding UTF8
+```
+
+Print the slug + workspace + repo URL **at the very start**. Prior
+demos stay intact for A/B compare. No destructive cleanup, no prompts.
+
+### 3.5 Audience-facing live screen
+
+Open a second PowerShell window so the audience sees real squad
+activity (not just chat narration):
+
+```powershell
+# Pane 1: live orchestration log (every agent appends start/finish)
+Get-Content .squad\orchestration.log -Wait -Tail 30
+
+# Pane 2: live token spend per agent
 while ($true) { Clear-Host; squad cost --all; Start-Sleep 5 }
-Get-ChildItem -Recurse -Force -Filter "*.md" .squad\agents |
-  Select-Object FullName, LastWriteTime |
-  Sort-Object LastWriteTime -Descending | Select-Object -First 10
+
+# Pane 3: which charter / history files just got touched
+while ($true) {
+  Clear-Host
+  Get-ChildItem -Recurse -Force -Filter "*.md" .squad\agents |
+    Select-Object FullName, LastWriteTime |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 10
+  Start-Sleep 5
+}
 ```
 
 Announce hand-offs in chat (`👷 Bob, take it…` / `✅ Bob done — over to
-🚜 Muck`). Combined with the live terminals, the audience sees both
-narration and proof.
+🚜 Muck`). Combined with the three live panes, the audience sees both
+narration and proof — and because every persona is a real background
+`task` agent appending to the log, the proof is real too.
 
 ---
 
