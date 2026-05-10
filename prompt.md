@@ -119,14 +119,15 @@ Build a **Sales Analysis** Power BI report with the following:
 ---
 
 ## 2. Technical Requirements — the bits that break demos when you skip them
+Make sure all tables can load incrementally
 
 ### 2.1 The Category dimension (read this **twice**)
 
 The whole point of this demo is that **GitHub Copilot can model a real two-level hierarchy properly.** Don't flatten it. Don't fake it.
 
 - Build `dim_product_category` with **two levels**:
-  - `MasterCategoryKey` + `MasterCategoryName` (e.g. *Bikes*, *Components*, *Clothing*, *Accessories*)
-  - `CategoryKey` + `CategoryName` (e.g. *Mountain Bikes*, *Road Bikes*, *Helmets*, *Jerseys*)
+  - `CategoryKey` + `CategoryName` (e.g. *Bikes*, *Components*, *Clothing*, *Accessories*)
+  - `SubCategoryKey` + `SubCategoryName` (e.g. *Mountain Bikes*, *Road Bikes*, *Helmets*, *Jerseys*)
 - In TMDL, expose a **user hierarchy** named `Category Hierarchy` with two levels: `Master Category` → `Category`.
 - The fact table joins to `CategoryKey` only. The hierarchy does the navigation.
 - In AdventureWorksLT this is `SalesLT.ProductCategory` — note `ParentProductCategoryID` is the self-join. Master = rows where `ParentProductCategoryID IS NULL`. Children = rows where it IS NOT NULL. **Resolve this in Silver, not in DAX.** If Copilot tries to `IF(BLANK())` the parent in DAX, slap its paws.
@@ -170,13 +171,13 @@ Schema-enabled lakehouses → tables land at `Tables/dbo/<name>`. Don't forget t
 
 ### 2.5 Pipeline
 
-`nightly_refresh` Data Pipeline running **daily at 02:00 W. Europe Standard Time** (Windows TZ name, not IANA). Activities: Bronze → Silver → Gold → SemanticModel refresh. Smoke-run it once after deploy, and accept the `202` synchronously. Schedule body uses `interval: 1440` minutes.
+`nightly_refresh` Data Pipeline running **daily at 02:00 W. Europe Standard Time** (Windows TZ name, not IANA). Activities: Bronze → Silver → Gold → SemanticModel refresh. Smoke-run it once after deploy, and accept the `202` synchronously. Schedule body uses `interval: 1440` minutes. Make sure it only loads the increments
 
 ### 2.6 Data agent (`OrdersAnalytics_Agent`)
 
 A Fabric Data Agent grounded on the `OrdersAnalytics` semantic model with **great instructions** so it answers stage questions correctly.
 
-- **Capacity:** see §0.5 — DataAgent does NOT run on Trial. Resume the F-SKU, reassign workspace, deploy, then reassign back + suspend.
+- **Capacity:** see §0.5 — DataAgent does NOT run on Trial. Resume the F-SKU rvdfabricwestus3, reassign workspace, deploy
 - **Item type literal is `DataAgent`.** Create with `POST /v1/workspaces/{ws}/items` body `{displayName:"OrdersAnalytics_Agent", type:"DataAgent"}` — synchronous, returns the item.
 - **Definition write path = Items API LRO.** OneLake DFS `Files/` is read-only for this item type; do NOT try PUT/PATCH there. Use `POST /v1/workspaces/{ws}/items/{id}/updateDefinition` (no `?format=`!) with three `InlineBase64` parts:
   1. `Files/Config/data_agent.json` — `{ "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/dataAgent/definition/dataAgent/2.1.0/schema.json" }`
@@ -196,11 +197,10 @@ A Fabric Data Agent grounded on the `OrdersAnalytics` semantic model with **grea
 - [ ] Report `OrdersAnalytics_Report` opens in the service with **both pages** rendering — cards, bar, donut, slicer, AND the heatmap. 🛣️
 - [ ] Pipeline + schedule deployed; smoke run kicked. 🚧
 - [ ] DataAgent `OrdersAnalytics_Agent` deployed with great `aiInstructions` (verified by GET-ing the definition back). 🤖
-- [ ] F-SKU reassigned back + suspended at end of run (no orphan billing). 💸
 - [ ] OpenSpec proposal validates `--strict`. 📜
 - [ ] `.squad/orchestration.log` ≥ 12 lines. 🐝
 - [ ] GitHub repo `Remc0000/FabricRoadshow_<slug>` exists, public, has all artifacts. ⬆️
-- [ ] Final ASCII finish flag with elapsed time + report URL + agent URL + manual data-source step printed to chat. 🏁
+- [ ] Final ASCII finish flag with elapsed time + report URL + agent URL + Fabric Workspace URL + manual data-source step printed to chat. 🏁
 
 ---
 
@@ -211,7 +211,7 @@ This is a **demo**, not a SOC2 audit. Optimise for:
 1. **Greens on the validation steps.** Anything off by ±5% → flag in the finish report, don't re-author. Save the heroic re-runs for staging.
 2. **Wall-clock under 35 minutes.** If Scoop blows past 10 minutes on framing, kill it and run the framing call yourself in 1 line of `az rest`.
 3. **Funny commit messages are encouraged.** "fix: ProductCategory was lying about its parents" gets a laugh in the room.
-4. **Cats welcome.** A small ASCII cat in the finish flag is canon.
+4. **Cats welcome.** A small ASCII cat in the finish flag is canon + the total time spend
 
 ```
        /\_/\
