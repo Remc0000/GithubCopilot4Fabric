@@ -43,8 +43,14 @@ Every constant you would otherwise discover with 5 minutes of `az` calls. If som
 
 ### Capacity
 
-- **Use the active Trial capacity** named `Trial-Remco` (SKU `FT1`/FTL64), id `39008553-abfe-4d4e-829c-201635501396`.
+- **Default: use the active Trial capacity** named `Trial-Remco` (SKU `FT1`/FTL64), id `39008553-abfe-4d4e-829c-201635501396` for the workspace + lakehouses + notebooks + semantic model + report + pipeline.
 - It must be in `State = Active` before workspace assignment will succeed. If it isn't, **stop** and ask the user — do not provision a new paid SKU.
+- **Exception — DataAgent requires F2+ paid SKU.** Trial returns `UnsupportedCapacitySKU: FTL64 SKU Not Supported`. For the agent step:
+  - Resume a paused F-SKU: `az resource invoke-action --ids /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Fabric/capacities/<name> --action resume` (Active in <30s).
+  - Reassign the workspace: `POST /v1/workspaces/{ws}/assignToCapacity` body `{capacityId}` (synchronous).
+  - Deploy the agent.
+  - **Always reassign workspace back to Trial AND `--action suspend` the F-SKU at the end of the run** — F8 burns ~$1.50/hr while Active. Confirm with user before keeping it warm.
+  - Known F-SKU in this tenant: `rvdfabricwestus3` (F8), Azure resource id `/subscriptions/2374d80b-4c7e-4800-9bfb-06af863af84a/resourceGroups/Fabric/providers/Microsoft.Fabric/capacities/rvdfabricwestus3`, Fabric capacity id `638b8321-729d-4c91-b267-33f2dfd12775`.
 
 ### Source data (AdventureWorksLT)
 
@@ -165,6 +171,20 @@ Schema-enabled lakehouses → tables land at `Tables/dbo/<name>`. Don't forget t
 
 `nightly_refresh` Data Pipeline running **daily at 02:00 W. Europe Standard Time** (Windows TZ name, not IANA). Activities: Bronze → Silver → Gold → SemanticModel refresh. Smoke-run it once after deploy, and accept the `202` synchronously. Schedule body uses `interval: 1440` minutes.
 
+### 2.6 Data agent (`OrdersAnalytics_Agent`)
+
+A Fabric Data Agent grounded on the `OrdersAnalytics` semantic model with **great instructions** so it answers stage questions correctly.
+
+- **Capacity:** see §0.5 — DataAgent does NOT run on Trial. Resume the F-SKU, reassign workspace, deploy, then reassign back + suspend.
+- **Item type literal is `DataAgent`.** Create with `POST /v1/workspaces/{ws}/items` body `{displayName:"OrdersAnalytics_Agent", type:"DataAgent"}` — synchronous, returns the item.
+- **Definition write path = Items API LRO.** OneLake DFS `Files/` is read-only for this item type; do NOT try PUT/PATCH there. Use `POST /v1/workspaces/{ws}/items/{id}/updateDefinition` (no `?format=`!) with three `InlineBase64` parts:
+  1. `Files/Config/data_agent.json` — `{ "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/dataAgent/definition/dataAgent/2.1.0/schema.json" }`
+  2. `Files/Config/draft/stage_config.json` — `{ "$schema": "…/stageConfiguration/1.0.0/schema.json", "aiInstructions": "<the great instructions, one big string>" }`
+  3. `.platform` — standard descriptor with `metadata.type=DataAgent`.
+- **`aiInstructions` is the single string field carrying everything**: persona, scope, **canonical metric DAX** (Revenue = `SUM(fact_sales_order[OrderValue])` — never `TotalDue`), Master Category → Category hierarchy direction, heatmap convention, self-check totals (`$708,690.15` / `32` / `542`), 4 few-shot Q/A pairs, refusal policy.
+- **PowerShell pothole:** `Invoke-RestMethod -Uri $r.Headers.Location` blows up because Location is a `String[]`. Cast `[string]$loc` or call from Python with `urllib`.
+- **Datasource binding (linking the semantic model) is portal-only today** — no documented REST POST. After deploy, emit a one-line manual step in the finish flag: *"Open the agent → Add data source → OrdersAnalytics."*
+
 ---
 
 ## 3. Acceptance criteria (Remco's stage checklist)
@@ -174,10 +194,12 @@ Schema-enabled lakehouses → tables land at `Tables/dbo/<name>`. Don't forget t
 - [ ] Direct Lake `OrdersAnalytics` model framed, hierarchy `Category Hierarchy` works in DAX. 🚂
 - [ ] Report `OrdersAnalytics_Report` opens in the service with **both pages** rendering — cards, bar, donut, slicer, AND the heatmap. 🛣️
 - [ ] Pipeline + schedule deployed; smoke run kicked. 🚧
+- [ ] DataAgent `OrdersAnalytics_Agent` deployed with great `aiInstructions` (verified by GET-ing the definition back). 🤖
+- [ ] F-SKU reassigned back + suspended at end of run (no orphan billing). 💸
 - [ ] OpenSpec proposal validates `--strict`. 📜
 - [ ] `.squad/orchestration.log` ≥ 12 lines. 🐝
 - [ ] GitHub repo `Remc0000/FabricRoadshow_<slug>` exists, public, has all artifacts. ⬆️
-- [ ] Final ASCII finish flag with elapsed time + report URL printed to chat. 🏁
+- [ ] Final ASCII finish flag with elapsed time + report URL + agent URL + manual data-source step printed to chat. 🏁
 
 ---
 
