@@ -31,6 +31,61 @@ If either file is missing, **stop** and ask the user. Don't improvise the orches
 
 ---
 
+## 0.5. Stage environment — pinned constants (don't go look these up)
+
+Every constant you would otherwise discover with 5 minutes of `az` calls. If something here drifts, fix this section first, then re-run.
+
+### Tenant + identity
+
+- **Tenant:** `MngEnvMCAP290973.onmicrosoft.com` (id `b5acdc46-f5ed-4250-a698-587dbe14e0ae`).
+- **`az` login required** (`az login --tenant <tenant>`). Pre-warm tokens for these audiences before persona work starts: `https://api.fabric.microsoft.com`, `https://analysis.windows.net/powerbi/api`, `https://storage.azure.com`, `https://database.windows.net`.
+- **GitHub identity** for commits: `Remc0000 <223556219+Copilot@users.noreply.github.com>`. `gh auth status` should show `Remc0000`.
+
+### Capacity
+
+- **Use the active Trial capacity** named `Trial-Remco` (SKU `FT1`/FTL64), id `39008553-abfe-4d4e-829c-201635501396`.
+- It must be in `State = Active` before workspace assignment will succeed. If it isn't, **stop** and ask the user — do not provision a new paid SKU.
+
+### Source data (AdventureWorksLT)
+
+The OneLake shortcuts in the new bronze lakehouse point at a pre-existing AdventureWorksLT lakehouse owned by Remco. **Don't re-ingest, don't re-shape — just shortcut.**
+
+- **Source workspace name:** `SalesLT` — id `ec826010-6b5e-4526-a88c-38b9511e2927`.
+- **Source lakehouse name:** `SalesLT` — id `efe41f78-82b7-47ee-9780-2d78372bfdf3`.
+- **Source schema (inside the lakehouse):** `SalesLT` — so the shortcut source path is `Tables/SalesLT/<table>` and (because the target lakehouses are schema-enabled) it lands at `Tables/dbo/<table>` in bronze. Inject `/dbo/` everywhere downstream.
+- **Tables to shortcut:** `Customer`, `Address`, `Product`, `ProductCategory`, `SalesOrderHeader`, `SalesOrderDetail`. (No `CustomerAddress` — geography is a left-join in Silver.)
+
+### Target workspace
+
+- **Workspace name:** `Fabric Roadshow_<slug>` — slug is `RAND4-HHMM` (e.g. `0601-2113`).
+- **Target lakehouses (schema-enabled at create-time, not retrofitted):** `bronze_lh`, `silver_lh`, `gold_lh`.
+- **Default schema:** `dbo` (the schema-enabled default — keep it, don't invent a custom schema).
+- **Local timezone for schedules:** `W. Europe Standard Time` (Windows TZ name, not IANA).
+
+### Canonical truth (use these to self-grade)
+
+After Muck finishes, the Gold `fact_sales_order` table MUST report:
+
+| Metric | Value | DAX |
+|---|---|---|
+| Revenue | **`$708,690.15`** | `[Sum Order Value] = SUM(fact_sales_order[OrderValue])` (`OrderValue` = `LineTotal`) |
+| Distinct orders | **`32`** | `[Order Count] = DISTINCTCOUNT(fact_sales_order[OrderKey])` |
+| Line rows | **`542`** | `COUNTROWS(fact_sales_order)` |
+
+Anything else (`$956k`, etc.) means you used `TotalDue` or aggregated wrong — fix Silver, don't paper over it in DAX.
+
+### Local paths + replay shortcut
+
+- **Run directory convention:** `C:\Users\revandam\GHCP4Fab\runs\<slug>\`.
+- **If a prior validated run exists** under `C:\Users\revandam\GHCP4Fab\runs\<old-slug>\` (anything other than the current slug), **use it as a template**: copy the tree (skip `.git`, `.squad/outputs`), swap the slug + GUIDs in TMDL/PBIR/pipeline JSON, then re-run the orchestrator. The published replay benchmark is **~17 minutes wall-clock** vs. ~90 for a fresh discovery run — see `3_new_skill.md`.
+
+### Output / hand-off
+
+- **GitHub repo to create:** `Remc0000/FabricRoadshow_<slug>` (public, `--source=. --push`).
+- **Finish flag** must include the report URL: `https://app.powerbi.com/groups/<workspaceId>/reports/<reportId>`, elapsed time, and a small ASCII cat.
+
+---
+
 ## 1. Functional Requirements — what Remco actually wants to show on stage
 
 Build a **Sales Analysis** Power BI report with the following:
