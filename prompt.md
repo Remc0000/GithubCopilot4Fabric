@@ -3,6 +3,7 @@
 > *aka "the one Remco runs on stage to prove that GitHub Copilot on Fabric isn't a slide deck."* 🐱
 >
 > If you (Copilot) read this and sigh, congratulations — you have feelings. Now build the report.
+> also keep track off time, I want to know how long it takes
 
 ---
 
