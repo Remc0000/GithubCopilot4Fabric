@@ -104,7 +104,28 @@ gh auth status
 
 ---
 
-### 5. Node.js
+### 5. Git
+
+Git is required to clone repositories, for the `skills-for-fabric` Copilot CLI
+plugin (installed as a Git checkout), and by `2_Fab_Init.md`.
+
+**Install:** <https://git-scm.com/downloads/win>
+
+```powershell
+# Install the latest stable release
+winget install --exact --id Git.Git
+
+# Check / upgrade
+git --version
+winget upgrade --exact --id Git.Git
+```
+
+Restart the terminal after installing Git for the first time so `git` is
+picked up on `PATH`.
+
+---
+
+### 6. Node.js
 
 The npm installation method for Copilot CLI requires Node.js 22 or later.
 Use the latest LTS release; do not install the end-of-life Node.js 18 or 20
@@ -127,7 +148,7 @@ upgrade that installation rather than keeping multiple unmanaged copies.
 
 ---
 
-### 6. Python 3.13
+### 7. Python 3.13
 
 Use Python 3.13 for this Fabric development setup. It matches the current
 Python baseline documented for Fabric Runtime in the
@@ -148,7 +169,7 @@ Use `py -3.13` when a command must run against this exact Python release.
 
 ---
 
-### 7. uv (Python package manager)
+### 8. uv (Python package manager)
 
 uv is used to install Spec Kit in an isolated tool environment.
 
@@ -167,7 +188,7 @@ winget upgrade --exact --id astral-sh.uv
 
 ## Tools
 
-### 8. AI Engineering Fluency CLI
+### 9. AI Engineering Fluency CLI
 
 Tracks GitHub Copilot token usage across editors and command-line tools.
 
@@ -186,7 +207,7 @@ ai-engineering-fluency usage
 
 ---
 
-### 9. OpenSpec
+### 10. OpenSpec
 
 A lightweight spec framework for AI-assisted development. It helps teams agree
 on what to build before writing code.
@@ -209,7 +230,7 @@ openspec init
 
 ---
 
-### 10. Spec Kit (Specify CLI)
+### 11. Spec Kit (Specify CLI)
 
 GitHub's spec-driven development toolkit. The current recommended installation
 uses the published `specify-cli` package.
@@ -244,7 +265,7 @@ Releases: <https://github.com/github/spec-kit/releases>
 
 ---
 
-### 11. Handy (speech-to-text)
+### 12. Handy (speech-to-text)
 
 A free, open-source, offline speech-to-text desktop app. Press a shortcut,
 speak, and the words are typed into the active text field.
@@ -375,6 +396,7 @@ $checks = @(
     @{ Name = "GitHub Copilot CLI"; Command = "copilot"; Arguments = @("--version") }
     @{ Name = "Azure CLI"; Command = "az"; Arguments = @("--version") }
     @{ Name = "GitHub CLI"; Command = "gh"; Arguments = @("--version") }
+    @{ Name = "Git"; Command = "git"; Arguments = @("--version") }
     @{ Name = "Node.js"; Command = "node"; Arguments = @("--version") }
     @{ Name = "npm"; Command = "npm"; Arguments = @("--version") }
     @{ Name = "uv"; Command = "uv"; Arguments = @("--version") }
@@ -445,6 +467,7 @@ winget upgrade --exact --id Microsoft.PowerShell
 winget upgrade --exact --id GitHub.Copilot
 winget upgrade --exact --id Microsoft.AzureCLI
 winget upgrade --exact --id GitHub.cli
+winget upgrade --exact --id Git.Git
 winget upgrade --exact --id OpenJS.NodeJS.LTS
 winget upgrade --exact --id Python.Python.3.13
 winget upgrade --exact --id astral-sh.uv
