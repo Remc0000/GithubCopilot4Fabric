@@ -292,6 +292,55 @@ developers. After installing, launch Handy and configure:
 
 ---
 
+## MCP servers
+
+[Model Context Protocol](https://docs.github.com/en/copilot/concepts/context/mcp)
+(MCP) servers give Copilot CLI extra tools and up-to-date context. Add these
+two for Fabric development: the GitHub MCP server (repository, issue, and pull
+request context) and the Microsoft Learn MCP server (live Microsoft/Fabric
+documentation search).
+
+**Docs:** <https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-mcp-servers>
+
+### GitHub MCP server
+
+The GitHub MCP server is built into Copilot CLI and available by default with
+no configuration. Only add it explicitly if you need a customized toolset
+(for example, a limited set of toolsets or read-only mode) via the
+Docker-based server instead of the built-in one.
+
+**Repo:** <https://github.com/github/github-mcp-server>
+
+```powershell
+# Optional: add the Docker-based GitHub MCP server instead of the built-in one
+copilot mcp add github --env GITHUB_PERSONAL_ACCESS_TOKEN=YOUR_GITHUB_PAT -- docker run -i --rm -e GITHUB_PERSONAL_ACCESS_TOKEN ghcr.io/github/github-mcp-server
+```
+
+### Microsoft Learn MCP server
+
+The Microsoft Learn MCP server is a free, public, remote HTTP server. No
+authentication is required. It exposes `microsoft_docs_search`,
+`microsoft_docs_fetch`, and `microsoft_code_sample_search`, which help Copilot
+CLI ground answers in current Microsoft Learn and Fabric documentation instead
+of relying on training data.
+
+**Docs:** <https://learn.microsoft.com/training/support/mcp>
+
+```powershell
+# Add the remote Microsoft Learn MCP server
+copilot mcp add --transport http microsoft-learn https://learn.microsoft.com/api/mcp
+```
+
+### Verify
+
+```powershell
+copilot mcp list
+```
+
+Or, inside an interactive `copilot` session, run `/mcp show`.
+
+---
+
 ## Custom statusline
 
 The third-party custom statusline shows useful context at the bottom of Copilot
